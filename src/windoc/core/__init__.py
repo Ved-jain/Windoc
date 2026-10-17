@@ -1,5 +1,11 @@
-"""Core engine, runner, and models for WinDoc."""
+"""Core engine, runner, models, and hypothesis evaluation for WinDoc."""
 
+from windoc.core.engine import (
+    DiagnosisFinding,
+    DiagnosisReport,
+    HypothesisStatus,
+    evaluate_network_hypotheses,
+)
 from windoc.core.models import (
     CheckStatus,
     DiagnosticResult,
@@ -20,4 +26,8 @@ __all__ = [
     "CommandResult",
     "run_command",
     "run_powershell",
+    "HypothesisStatus",
+    "DiagnosisFinding",
+    "DiagnosisReport",
+    "evaluate_network_hypotheses",
 ]

@@ -126,22 +126,79 @@ def info() -> None:
     )
 
 
+def render_diagnosis_report(report) -> None:
+    """Render the evaluated hypothesis verdict and recommended actions."""
+    if not report.primary_finding:
+        console.print(
+            Panel(
+                "[bold yellow]Diagnostic findings are inconclusive.[/bold yellow]\n"
+                "Insufficient evidence to isolate a single root cause.",
+                title="[bold yellow]Investigation Inconclusive[/bold yellow]",
+                border_style="yellow",
+            )
+        )
+        return
+
+    primary = report.primary_finding
+    conf_pct = int(primary.confidence * 100)
+
+    if primary.cause_id == "NET_ALL_HEALTHY":
+        content = (
+            f"[bold green][OK] {primary.title}[/bold green] (Confidence: {conf_pct}%)\n\n"
+            f"[white]{primary.description}[/white]\n\n"
+            f"[bold]Recommended Action:[/bold] {primary.recommended_action}"
+        )
+        console.print(
+            Panel(
+                content,
+                title="[bold green]Root Cause Diagnosis[/bold green]",
+                border_style="green",
+            )
+        )
+    else:
+        evidence_text = "\n".join(f" - {ev}" for ev in primary.supporting_evidence) or " - Correlated failure symptoms"
+        content = (
+            f"[bold red][!] Root Cause:[/bold red] [bold white]{primary.title}[/bold white] (Confidence: [bold red]{conf_pct}%[/bold red])\n"
+            f"[dim]Status: {primary.status.value}[/dim]\n\n"
+            f"[white]{primary.description}[/white]\n\n"
+            f"[bold cyan]Supporting Evidence:[/bold cyan]\n{evidence_text}\n\n"
+            f"[bold yellow]Recommended Next Step:[/bold yellow] {primary.recommended_action}"
+        )
+        console.print(
+            Panel(
+                content,
+                title="[bold red]Root Cause Diagnosis[/bold red]",
+                border_style="red",
+            )
+        )
+
+
 @app.command()
 def scan() -> None:
     """Run an automated diagnostic scan across all supported subsystems."""
+    from windoc.core.engine import evaluate_network_hypotheses
+
     console.print("[bold cyan]Starting comprehensive diagnostic scan...[/bold cyan]\n")
     with console.status("[bold green]Analyzing network subsystem...[/bold green]"):
         results = run_all_network_checks()
     render_diagnostic_results("Network Diagnostics", results)
 
+    report = evaluate_network_hypotheses(results)
+    render_diagnosis_report(report)
+
 
 @diagnose_app.command(name="network")
 def diagnose_network() -> None:
     """Diagnose network adapters, IP configuration, gateway, DNS, and external reachability."""
+    from windoc.core.engine import evaluate_network_hypotheses
+
     console.print("[bold cyan]Investigating Network subsystem...[/bold cyan]\n")
     with console.status("[bold green]Executing network checks...[/bold green]"):
         results = run_all_network_checks()
     render_diagnostic_results("Network Diagnostic Report", results)
+
+    report = evaluate_network_hypotheses(results)
+    render_diagnosis_report(report)
 
 
 @app.command()

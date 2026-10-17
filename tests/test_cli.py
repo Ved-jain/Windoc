@@ -44,3 +44,45 @@ def test_cli_list_domains() -> None:
     assert "bluetooth" in result.stdout
     assert "drivers" in result.stdout
     assert "update" in result.stdout
+
+
+def test_cli_diagnose_network() -> None:
+    """Verify `windoc diagnose network` command output formatting."""
+    from unittest.mock import patch
+    from windoc.core.models import CheckStatus, DiagnosticResult
+
+    mock_result = DiagnosticResult(
+        check_id="net.adapter.state",
+        domain="network",
+        observation="Adapter operational",
+        status=CheckStatus.PASS,
+        data_source="Get-NetAdapter",
+    )
+    with patch("windoc.cli.run_all_network_checks", return_value=[mock_result]):
+        result = runner.invoke(app, ["diagnose", "network"])
+        assert result.exit_code == 0
+        assert "Network Diagnostic Report" in result.stdout
+        assert "net.adapter.state" in result.stdout
+        assert "PASS" in result.stdout
+
+
+def test_cli_scan() -> None:
+    """Verify `windoc scan` command triggers diagnostic scans."""
+    from unittest.mock import patch
+    from windoc.core.models import CheckStatus, DiagnosticResult
+
+    mock_result = DiagnosticResult(
+        check_id="net.dns.test",
+        domain="network",
+        observation="DNS test passed",
+        status=CheckStatus.PASS,
+        data_source="socket",
+    )
+    with patch("windoc.cli.run_all_network_checks", return_value=[mock_result]):
+        result = runner.invoke(app, ["scan"])
+        assert result.exit_code == 0
+        assert "Starting comprehensive diagnostic scan" in result.stdout
+        assert "Network Diagnostics" in result.stdout
+        assert "net.dns.test" in result.stdout
+        assert "PASS" in result.stdout
+

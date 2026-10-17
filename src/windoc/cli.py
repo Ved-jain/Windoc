@@ -2,7 +2,7 @@
 
 import platform
 import sys
-from typing import Optional
+from typing import List, Optional
 
 import typer
 from rich.console import Console
@@ -10,6 +10,8 @@ from rich.panel import Panel
 from rich.table import Table
 
 from windoc import __version__
+from windoc.core.models import CheckStatus, DiagnosticResult
+from windoc.domains.network import run_all_network_checks
 
 app = typer.Typer(
     name="windoc",
@@ -17,6 +19,13 @@ app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
 )
+diagnose_app = typer.Typer(
+    name="diagnose",
+    help="Run targeted diagnostic checks for specific Windows subsystems.",
+    add_completion=False,
+    no_args_is_help=True,
+)
+app.add_typer(diagnose_app, name="diagnose")
 console = Console()
 
 
@@ -39,6 +48,51 @@ def main(
     ),
 ) -> None:
     """WinDoc: Local, evidence-driven Windows troubleshooting tool."""
+
+
+def render_diagnostic_results(title: str, results: List[DiagnosticResult]) -> None:
+    """Render a list of diagnostic results into a formatted Rich table."""
+    table = Table(title=title, border_style="cyan", show_lines=True)
+    table.add_column("Status", style="bold", width=8, justify="center")
+    table.add_column("Check ID", style="cyan", min_width=26, no_wrap=True)
+    table.add_column("Observation", style="white")
+    table.add_column("Source", style="dim", min_width=16)
+
+    pass_count = 0
+    fail_count = 0
+    warn_count = 0
+    err_count = 0
+
+    for res in results:
+        if res.status == CheckStatus.PASS:
+            status_badge = "[bold green]PASS[/bold green]"
+            pass_count += 1
+        elif res.status == CheckStatus.FAIL:
+            status_badge = "[bold red]FAIL[/bold red]"
+            fail_count += 1
+        elif res.status == CheckStatus.WARNING:
+            status_badge = "[bold yellow]WARN[/bold yellow]"
+            warn_count += 1
+        else:
+            status_badge = f"[bold magenta]{res.status.value}[/bold magenta]"
+            err_count += 1
+
+        table.add_row(
+            status_badge,
+            res.check_id,
+            res.observation,
+            res.data_source,
+        )
+
+    console.print(table)
+    summary = (
+        f"[bold]Summary:[/bold] "
+        f"[green]{pass_count} Passed[/green] | "
+        f"[yellow]{warn_count} Warnings[/yellow] | "
+        f"[red]{fail_count} Failed[/red] | "
+        f"[magenta]{err_count} Other[/magenta]"
+    )
+    console.print(Panel(summary, style="cyan", expand=False))
 
 
 @app.command()
@@ -73,6 +127,24 @@ def info() -> None:
 
 
 @app.command()
+def scan() -> None:
+    """Run an automated diagnostic scan across all supported subsystems."""
+    console.print("[bold cyan]Starting comprehensive diagnostic scan...[/bold cyan]\n")
+    with console.status("[bold green]Analyzing network subsystem...[/bold green]"):
+        results = run_all_network_checks()
+    render_diagnostic_results("Network Diagnostics", results)
+
+
+@diagnose_app.command(name="network")
+def diagnose_network() -> None:
+    """Diagnose network adapters, IP configuration, gateway, DNS, and external reachability."""
+    console.print("[bold cyan]Investigating Network subsystem...[/bold cyan]\n")
+    with console.status("[bold green]Executing network checks...[/bold green]"):
+        results = run_all_network_checks()
+    render_diagnostic_results("Network Diagnostic Report", results)
+
+
+@app.command()
 def list_domains() -> None:
     """List diagnostic domains supported or planned by WinDoc."""
     table = Table(title="Diagnostic Domains", border_style="cyan")
@@ -80,7 +152,7 @@ def list_domains() -> None:
     table.add_column("Status", style="green")
     table.add_column("Description", style="white")
 
-    table.add_row("network", "Planned (Milestone 3)", "Wi-Fi, Ethernet, IP config, Gateway, DNS")
+    table.add_row("network", "Supported (Active)", "Wi-Fi, Ethernet, IP config, Gateway, DNS, Connectivity")
     table.add_row("bluetooth", "Planned (Milestone 6)", "Adapter state, service, device connection")
     table.add_row("drivers", "Planned (Milestone 7)", "Device Manager error codes, missing devices")
     table.add_row("update", "Planned (Milestone 8)", "Windows Update services, error codes, logs")

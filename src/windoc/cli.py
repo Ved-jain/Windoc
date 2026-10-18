@@ -12,6 +12,7 @@ from rich.table import Table
 from windoc import __version__
 from windoc.core.models import CheckStatus, DiagnosticResult
 from windoc.domains.network import run_all_network_checks
+from windoc.repairs import RepairStatus, execute_repair, registry
 
 app = typer.Typer(
     name="windoc",
@@ -164,6 +165,16 @@ def render_diagnosis_report(report) -> None:
             f"[bold cyan]Supporting Evidence:[/bold cyan]\n{evidence_text}\n\n"
             f"[bold yellow]Recommended Next Step:[/bold yellow] {primary.recommended_action}"
         )
+
+        from windoc.repairs import registry
+        matching_repairs = registry.find_for_cause(primary.cause_id)
+        if matching_repairs:
+            rep_list = "\n".join(
+                f" - [bold cyan]windoc repair {r.repair_id}[/bold cyan] ({r.name}, Risk: {r.risk_level.value})"
+                for r in matching_repairs
+            )
+            content += f"\n\n[bold green]Available Controlled Repairs:[/bold green]\n{rep_list}"
+
         console.print(
             Panel(
                 content,
@@ -199,6 +210,86 @@ def diagnose_network() -> None:
 
     report = evaluate_network_hypotheses(results)
     render_diagnosis_report(report)
+
+
+@app.command(name="list-repairs")
+def list_repairs() -> None:
+    """List approved repair procedures in the controlled repair registry."""
+    table = Table(title="Controlled Repair Registry", border_style="cyan")
+    table.add_column("Repair ID", style="bold cyan", no_wrap=True)
+    table.add_column("Name", style="bold white")
+    table.add_column("Risk", justify="center")
+    table.add_column("Admin", justify="center")
+    table.add_column("Target Cause", style="dim")
+    table.add_column("Expected Effects", style="white")
+
+    for rep in registry.list_all():
+        risk_badge = f"[green]{rep.risk_level.value}[/green]" if rep.risk_level.value == "LOW" else f"[yellow]{rep.risk_level.value}[/yellow]"
+        admin_badge = "[red]Yes[/red]" if rep.requires_admin else "[green]No[/green]"
+        table.add_row(
+            rep.repair_id,
+            rep.name,
+            risk_badge,
+            admin_badge,
+            rep.target_cause_id,
+            rep.expected_effects,
+        )
+
+    console.print(table)
+
+
+@app.command(name="repair")
+def repair_cmd(
+    repair_id: str = typer.Argument(..., help="The identifier of the repair to execute (e.g. net.flush_dns)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip interactive confirmation prompt"),
+) -> None:
+    """Execute a controlled repair procedure with pre/post verification."""
+    rep = registry.get(repair_id)
+    if not rep:
+        console.print(f"[bold red]Error:[/bold red] Unknown repair '{repair_id}'. Run `windoc list-repairs` to see all supported repairs.")
+        raise typer.Exit(code=1)
+
+    result = execute_repair(rep, auto_approve=yes)
+
+    if result.status == RepairStatus.SUCCESS:
+        console.print(
+            Panel(
+                f"[bold green][OK] Repair Succeeded and Independently Verified![/bold green]\n\n"
+                f"[white]{result.message}[/white]",
+                title="[bold green]Repair Verification: SUCCESS[/bold green]",
+                border_style="green",
+            )
+        )
+    elif result.status == RepairStatus.VERIFICATION_FAILED:
+        console.print(
+            Panel(
+                f"[bold red][!] Command executed, but independent verification failed.[/bold red]\n\n"
+                f"[white]{result.message}[/white]\n\n"
+                f"[yellow]The original symptom was not resolved by this procedure.[/yellow]",
+                title="[bold red]Repair Verification: FAILED[/bold red]",
+                border_style="red",
+            )
+        )
+    elif result.status == RepairStatus.PERMISSION_DENIED:
+        console.print(
+            Panel(
+                f"[bold yellow][!] Administrator Privileges Required[/bold yellow]\n\n"
+                f"[white]{result.message}[/white]",
+                title="[bold yellow]Permission Denied[/bold yellow]",
+                border_style="yellow",
+            )
+        )
+    elif result.status == RepairStatus.ABORTED:
+        console.print("[yellow]Repair cancelled by user.[/yellow]")
+    else:
+        console.print(
+            Panel(
+                f"[bold red][!] Repair execution failed.[/bold red]\n\n"
+                f"[white]{result.message}[/white]",
+                title="[bold red]Repair Failed[/bold red]",
+                border_style="red",
+            )
+        )
 
 
 @app.command()

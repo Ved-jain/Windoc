@@ -86,3 +86,39 @@ def test_cli_scan() -> None:
         assert "net.dns.test" in result.stdout
         assert "PASS" in result.stdout
 
+
+def test_cli_list_repairs() -> None:
+    """Verify `windoc list-repairs` displays allowlisted repair table."""
+    result = runner.invoke(app, ["list-repairs"])
+    assert result.exit_code == 0
+    assert "Controlled Repair Registry" in result.stdout
+    assert "net.flush_dns" in result.stdout
+    assert "net.renew_dhcp" in result.stdout
+
+
+def test_cli_repair_cmd_success() -> None:
+    """Verify `windoc repair` executes and renders success panel."""
+    from unittest.mock import patch
+    from windoc.repairs.models import RepairExecutionResult, RepairStatus
+
+    mock_res = RepairExecutionResult(
+        repair_id="net.flush_dns",
+        name="Flush DNS Resolver Cache",
+        status=RepairStatus.SUCCESS,
+        message="DNS resolution verified successfully.",
+        verified=True,
+    )
+    with patch("windoc.cli.execute_repair", return_value=mock_res):
+        result = runner.invoke(app, ["repair", "net.flush_dns", "--yes"])
+        assert result.exit_code == 0
+        assert "Repair Verification: SUCCESS" in result.stdout
+        assert "DNS resolution verified successfully" in result.stdout
+
+
+def test_cli_repair_unknown_id() -> None:
+    """Verify `windoc repair` with invalid ID exits with error code 1."""
+    result = runner.invoke(app, ["repair", "invalid.non_existent_repair"])
+    assert result.exit_code == 1
+    assert "Unknown repair" in result.stdout
+
+

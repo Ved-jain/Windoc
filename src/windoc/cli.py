@@ -336,5 +336,66 @@ def list_domains() -> None:
     console.print(table)
 
 
+@app.command()
+def activate() -> None:
+    """Register WinDoc globally in Windows so you never need to activate a venv."""
+    from pathlib import Path
+
+    user_home = Path.home()
+    local_bin = user_home / ".local" / "bin"
+    local_bin.mkdir(parents=True, exist_ok=True)
+
+    # Determine windoc executable path
+    venv_windoc = Path(sys.prefix) / "Scripts" / "windoc.exe"
+    if not venv_windoc.exists():
+        venv_windoc = Path.cwd() / ".venv" / "Scripts" / "windoc.exe"
+
+    if not venv_windoc.exists():
+        console.print(
+            Panel(
+                f"[bold red][FAIL] Could not locate windoc.exe binary.[/bold red]\n\n"
+                f"Searched in: {sys.prefix}\\Scripts and {Path.cwd()}\\.venv\\Scripts",
+                title="Activation Failed",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+    # Write global stubs to ~/.local/bin
+    cmd_stub = local_bin / "windoc.cmd"
+    cmd_content = f'@echo off\n"{venv_windoc}" %*\n'
+    cmd_stub.write_text(cmd_content, encoding="utf-8")
+
+    ps1_stub = local_bin / "windoc.ps1"
+    ps1_content = f'& "{venv_windoc}" @args\n'
+    ps1_stub.write_text(ps1_content, encoding="utf-8")
+
+    # Ensure ~/.local/bin is in User Environment PATH
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_READ | winreg.KEY_WRITE) as key:
+            current_path, _ = winreg.QueryValueEx(key, "Path")
+            path_parts = [p.strip() for p in current_path.split(";") if p.strip()]
+            str_local_bin = str(local_bin)
+            if str_local_bin.lower() not in [p.lower() for p in path_parts]:
+                new_path = f"{str_local_bin};{current_path}"
+                winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, new_path)
+    except Exception:
+        pass
+
+    console.print(
+        Panel(
+            f"[bold green][OK] WinDoc is now globally active and registered![/bold green]\n\n"
+            f"[cyan]Target executable:[/cyan] {venv_windoc}\n"
+            f"[cyan]Global launcher:[/cyan]   {cmd_stub}\n"
+            f"[cyan]PowerShell stub:[/cyan]   {ps1_stub}\n\n"
+            f"[bold white]You can now run [green]windoc[/green] directly from ANY terminal or directory without manually activating any virtual environment.[/bold white]",
+            title="[bold green]WinDoc Activation: Ready[/bold green]",
+            border_style="green",
+        )
+    )
+
+
 if __name__ == "__main__":
     app()

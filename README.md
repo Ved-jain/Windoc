@@ -30,21 +30,19 @@ WinDoc is an open-source, local, terminal-based diagnostic and repair tool desig
 - Python 3.10 or higher
 - PowerShell 5.1+
 
-### Local Setup
+### Quick Install (One-Click)
+Double-click `install.cmd` in the project root, or run:
 ```powershell
-# Clone the repository
-git clone <repo-url>
-cd Windoc
-
-# Create a virtual environment
-py -3 -m venv .venv
-
-# Activate the virtual environment
-.\.venv\Scripts\Activate.ps1
-
-# Install in editable mode with development dependencies
-pip install -e .[dev]
+.\install.cmd
 ```
+This automatically initializes the virtual environment, installs all dependencies, and registers `windoc` into your Windows user PATH.
+
+### Global Activation (`windoc activate`)
+Once installed, run:
+```powershell
+windoc activate
+```
+This registers global launchers in `~/.local/bin` and Windows environment PATH. You can now run `windoc` directly from **any terminal, any directory**, with **no virtual environment activation required**!
 
 ---
 
@@ -54,8 +52,18 @@ pip install -e .[dev]
 # Display help and available commands
 windoc --help
 
-# Show version
-windoc --version
+# Automated scan across all subsystems
+windoc scan
+
+# Targeted diagnostics
+windoc diagnose network
+windoc diagnose bluetooth
+
+# View approved repairs
+windoc list-repairs
+
+# Execute a repair with automatic pre/post verification
+windoc repair net.flush_dns
 ```
 
 ---

@@ -151,3 +151,10 @@ def test_cli_diagnose_bluetooth() -> None:
         assert "PASS" in result.stdout
 
 
+def test_cli_activate() -> None:
+    """Verify `windoc activate` registers launcher and exits with 0."""
+    result = runner.invoke(app, ["activate"])
+    assert result.exit_code == 0
+    assert "WinDoc Activation: Ready" in result.stdout or "WinDoc is now globally active" in result.stdout
+
+

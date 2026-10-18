@@ -6,9 +6,30 @@
 [![Tests](https://img.shields.io/badge/tests-116%20passed-brightgreen.svg)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-1.0.0%20(Completed)-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-green.svg)]()
 
 WinDoc is an open-source, local, terminal-based diagnostic and repair tool designed for Windows. Unlike generic troubleshooting utilities that execute destructive, one-size-fits-all scripts, WinDoc operates like a medical doctor: it collects verifiable evidence about your system's actual state, evaluates competing hypotheses through deterministic inference, runs targeted tests, and offers safe, allowlisted repairs only when justified by diagnostic proof.
+
+---
+
+## 🏆 Project Milestones & Progress (11/11 Completed)
+
+WinDoc was built systematically across **11 development milestones**, progressing from foundational architecture to a fully unified, zero-hassle multi-domain diagnostic and repair suite:
+
+| Milestone | Subsystem / Focus | Key Engineering Deliverables | Test Coverage | Status |
+| :--- | :--- | :--- | :---: | :---: |
+| **Milestone 1** | Foundation & CLI Architecture | Typer CLI skeleton, Rich color formatting, `--version`, `info`, `list-domains`. | Unit Tests | ✅ Complete |
+| **Milestone 2** | Diagnostic Models & Safe Runner | Immutable Pydantic models (`DiagnosticResult`, `CheckStatus`), `shell=False` execution, strict timeouts, structured JSON parser. | Unit Tests | ✅ Complete |
+| **Milestone 3** | Network Diagnostics Domain | `Get-NetAdapter`, APIPA address detection, Default Gateway ICMP probes, DNS resolution tests, captive portal HTTP NCSI probes. | Unit Tests | ✅ Complete |
+| **Milestone 4** | Deterministic Hypothesis Engine | Weighted scoring engine, confidence ratings, primary root cause isolation (`NET_DNS_RESOLUTION_FAILED`, etc.). | Unit Tests | ✅ Complete |
+| **Milestone 5** | Controlled Repair Registry | Allowlisted repairs (`net.flush_dns`, `net.renew_dhcp`), user consent gates, elevation checks, independent post-repair verification. | Unit Tests | ✅ Complete |
+| **Milestone 6** | Bluetooth Diagnostics & Repairs | Radio hardware status, `bthserv` service monitoring, paired devices, service restart & adapter re-enable repairs. | Unit Tests | ✅ Complete |
+| **Milestone 7** | Hardware & Drivers Domain | Plug and Play (PnP) queries, Device Manager error codes (Code 28, 43, 22, 14), display and USB controllers, driver re-enable repair. | Unit Tests | ✅ Complete |
+| **Milestone 8** | Windows Update Subsystem | Update background services (`wuauserv`, `bits`, `cryptsvc`), pending reboot registry flags, hotfix verification, service reset repair. | Unit Tests | ✅ Complete |
+| **Milestone 9** | System Integrity & Core Services | Windows Component Store (`DISM /CheckHealth`), core subsystem services (`RpcSs`, `Winmgmt`, `EventLog`), BSOD crash dump detection. | Unit Tests | ✅ Complete |
+| **Milestone 10** | Performance & Resource Diagnostics | Multi-core CPU load, physical RAM pressure (>92%), system drive C: storage capacity, uptime monitoring, and disk cleanup repairs. | Unit Tests | ✅ Complete |
+| **Milestone 11** | Zero-Hassle UX & Production Release | Unified `windoc scan` & `windoc fix`, global `windoc activate` launcher, comprehensive docs, and 116 passing tests. | 116 Tests | ✅ Complete |
 
 ---
 
@@ -17,7 +38,7 @@ WinDoc is an open-source, local, terminal-based diagnostic and repair tool desig
 Everyday users don't need to memorize complex CLI arguments or multi-step repair commands. WinDoc is designed around two simple workflows:
 
 ```powershell
-# 1. Scan your entire PC in 5 seconds across 6 subsystems
+# 1. Scan your entire PC in 5 seconds across all 6 subsystems
 windoc scan
 
 # 2. Automatically find problems, apply verified fixes, and re-test

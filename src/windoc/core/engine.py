@@ -405,3 +405,162 @@ def evaluate_bluetooth_hypotheses(evidence: List[DiagnosticResult]) -> Diagnosis
         summary=summary,
     )
 
+
+def evaluate_driver_hypotheses(evidence: List[DiagnosticResult]) -> DiagnosisReport:
+    """Evaluate candidate root causes for driver and hardware device issues based on gathered evidence."""
+    ev_map: Dict[str, DiagnosticResult] = {r.check_id: r for r in evidence}
+
+    h_healthy = {"score": 50.0, "supports": [], "refutes": []}
+    h_missing_drv = {"score": 0.0, "supports": [], "refutes": []}
+    h_crashed_43 = {"score": 0.0, "supports": [], "refutes": []}
+    h_disabled_22 = {"score": 0.0, "supports": [], "refutes": []}
+    h_reboot_14 = {"score": 0.0, "supports": [], "refutes": []}
+
+    # Analyze PnP error results
+    code_28_devices = [r for r in evidence if r.check_id == "drv.device.code_28"]
+    code_43_devices = [r for r in evidence if r.check_id == "drv.device.code_43"]
+    code_22_devices = [r for r in evidence if r.check_id == "drv.device.code_22"]
+    code_14_devices = [r for r in evidence if r.check_id == "drv.device.code_14"]
+    all_healthy_res = ev_map.get("drv.pnp.all_healthy")
+
+    if all_healthy_res and all_healthy_res.status == CheckStatus.PASS:
+        h_healthy["score"] += 50.0
+        h_healthy["supports"].append(all_healthy_res.observation)
+        h_missing_drv["refutes"].append("No devices reporting error code 28")
+        h_crashed_43["refutes"].append("No devices reporting error code 43")
+        h_disabled_22["refutes"].append("No devices reporting error code 22")
+
+    if code_28_devices:
+        h_missing_drv["score"] += 95.0
+        for dev in code_28_devices:
+            h_missing_drv["supports"].append(dev.observation)
+        h_healthy["score"] = 0.0
+        h_healthy["refutes"].append(f"{len(code_28_devices)} device(s) missing drivers (Code 28)")
+
+    if code_43_devices:
+        h_crashed_43["score"] += 90.0
+        for dev in code_43_devices:
+            h_crashed_43["supports"].append(dev.observation)
+        h_healthy["score"] = 0.0
+        h_healthy["refutes"].append(f"{len(code_43_devices)} device(s) reported hardware failure (Code 43)")
+
+    if code_22_devices:
+        h_disabled_22["score"] += 90.0
+        for dev in code_22_devices:
+            h_disabled_22["supports"].append(dev.observation)
+        h_healthy["score"] = 0.0
+        h_healthy["refutes"].append(f"{len(code_22_devices)} device(s) disabled in Device Manager (Code 22)")
+
+    if code_14_devices:
+        h_reboot_14["score"] += 95.0
+        for dev in code_14_devices:
+            h_reboot_14["supports"].append(dev.observation)
+        h_healthy["score"] = 0.0
+        h_healthy["refutes"].append("Reboot pending for device driver initialization")
+
+    # Display adapter correlation
+    display_res = ev_map.get("drv.display.adapter_state")
+    if display_res:
+        if display_res.status == CheckStatus.PASS:
+            h_healthy["supports"].append(display_res.observation)
+        elif display_res.status == CheckStatus.FAIL:
+            h_healthy["score"] = 0.0
+            h_crashed_43["score"] += 20.0
+            h_crashed_43["supports"].append(display_res.observation)
+
+    candidates = [
+        {
+            "cause_id": "DRV_ALL_HEALTHY",
+            "title": "All Hardware Devices and Drivers Operational",
+            "description": "All connected PnP devices, display adapters, and USB controllers report normal operational status.",
+            "score": h_healthy["score"],
+            "supports": h_healthy["supports"],
+            "refutes": h_healthy["refutes"],
+            "recommended_action": "No repair needed; device manager and hardware subsystems are functioning normally.",
+        },
+        {
+            "cause_id": "DRV_MISSING_DRIVERS",
+            "title": "Missing Device Drivers (Code 28)",
+            "description": "One or more hardware devices are connected but lack compatible drivers installed.",
+            "score": h_missing_drv["score"],
+            "supports": h_missing_drv["supports"],
+            "refutes": h_missing_drv["refutes"],
+            "recommended_action": "Run Windows Update or scan for hardware changes to provision missing drivers.",
+        },
+        {
+            "cause_id": "DRV_DEVICE_CRASHED_CODE_43",
+            "title": "Hardware Device Stopped Due to Error (Code 43)",
+            "description": "A device reported an internal hardware failure, firmware timeout, or driver crash to Windows.",
+            "score": h_crashed_43["score"],
+            "supports": h_crashed_43["supports"],
+            "refutes": h_crashed_43["refutes"],
+            "recommended_action": "Rescan hardware devices via pnputil or restart the host controller.",
+        },
+        {
+            "cause_id": "DRV_DEVICE_DISABLED_CODE_22",
+            "title": "Hardware Device Disabled (Code 22)",
+            "description": "One or more hardware devices are present but disabled in Windows Device Manager.",
+            "score": h_disabled_22["score"],
+            "supports": h_disabled_22["supports"],
+            "refutes": h_disabled_22["refutes"],
+            "recommended_action": "Re-enable the disabled device in Device Manager.",
+        },
+        {
+            "cause_id": "DRV_REBOOT_REQUIRED_CODE_14",
+            "title": "System Restart Required (Code 14)",
+            "description": "Hardware device driver installation is complete but requires a system reboot to initialize.",
+            "score": h_reboot_14["score"],
+            "supports": h_reboot_14["supports"],
+            "refutes": h_reboot_14["refutes"],
+            "recommended_action": "Restart your computer to complete driver loading.",
+        },
+    ]
+
+    findings: List[DiagnosisFinding] = []
+    for c in candidates:
+        raw_score = max(0.0, min(100.0, c["score"]))
+        confidence = round(raw_score / 100.0, 2)
+
+        if confidence >= 0.80:
+            status = HypothesisStatus.CONFIRMED
+        elif confidence >= 0.50:
+            status = HypothesisStatus.LIKELY
+        elif confidence >= 0.25:
+            status = HypothesisStatus.POSSIBLE
+        elif confidence <= 0.10:
+            status = HypothesisStatus.RULED_OUT
+        else:
+            status = HypothesisStatus.INCONCLUSIVE
+
+        findings.append(
+            DiagnosisFinding(
+                cause_id=c["cause_id"],
+                title=c["title"],
+                description=c["description"],
+                confidence=confidence,
+                status=status,
+                supporting_evidence=c["supports"],
+                refuting_evidence=c["refutes"],
+                recommended_action=c["recommended_action"],
+            )
+        )
+
+    findings.sort(key=lambda f: f.confidence, reverse=True)
+    primary = findings[0] if findings and findings[0].confidence >= 0.50 else None
+
+    if primary and primary.status == HypothesisStatus.CONFIRMED:
+        summary = f"Confirmed root cause: {primary.title} (Confidence: {int(primary.confidence * 100)}%)."
+    elif primary and primary.status == HypothesisStatus.LIKELY:
+        summary = f"Probable root cause: {primary.title} (Confidence: {int(primary.confidence * 100)}%)."
+    else:
+        summary = "Diagnostic evidence is inconclusive; manual investigation required."
+
+    return DiagnosisReport(
+        domain="drivers",
+        primary_finding=primary,
+        all_findings=findings,
+        evidence_count=len(evidence),
+        is_conclusive=primary is not None and primary.status in (HypothesisStatus.CONFIRMED, HypothesisStatus.LIKELY),
+        summary=summary,
+    )
+

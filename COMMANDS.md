@@ -71,6 +71,15 @@ Every issue WinDoc detects is assigned a transparent, deterministic **Root Cause
 | `BTH_ADAPTER_DISABLED` | **Bluetooth Hardware Disabled** | "Bluetooth is turned off", Device Manager shows down arrow. | Device Manager query returns ConfigManagerErrorCode `22` (Device Disabled). |
 | `BTH_ADAPTER_MISSING` | **No Bluetooth Hardware Found** | System acts as if Bluetooth does not exist. | PnP hardware query finds 0 Bluetooth radio controllers. |
 
+### Drivers & Hardware Domain (`drv`)
+| Cause Code | Plain-English Meaning | Common Symptom | How WinDoc Detects It |
+| :--- | :--- | :--- | :--- |
+| `DRV_ALL_HEALTHY` | **All Hardware Operational** | GPU, USB, and audio devices operate normally without warnings. | 0 connected PnP devices report Device Manager error codes; display adapter and USB controllers OK. |
+| `DRV_MISSING_DRIVERS` | **Missing Hardware Driver** | Yellow exclamation mark in Device Manager, "PCI device" without driver. | PnP query finds connected device with ConfigManagerErrorCode `28` (Driver not installed). |
+| `DRV_DEVICE_CRASHED_CODE_43` | **Hardware Device Error (Code 43)** | Device stopped functioning suddenly, GPU or controller driver crashed. | PnP query finds active device with ConfigManagerErrorCode `43` (Device reported problem). |
+| `DRV_DEVICE_DISABLED_CODE_22` | **Hardware Device Disabled** | Hardware component is disabled by user or administrative policy. | PnP query finds active device with ConfigManagerErrorCode `22` (Device disabled). |
+| `DRV_REBOOT_REQUIRED_CODE_14` | **Restart Required for Driver** | New driver installed, but device does not work until reboot. | PnP query finds active device with ConfigManagerErrorCode `14` (Restart required). |
+
 ---
 
 ## 4. Controlled Repair Procedures Reference
@@ -84,6 +93,8 @@ WinDoc only executes safe, allowlisted, non-destructive repair procedures. **Bli
 | `net.restart_adapter` | **Restart Network Adapter** | `NET_GATEWAY_UNREACHABLE` | `MEDIUM` | **Yes** | Gracefully restarts the active network interface. **Verification:** Confirms adapter returns to `Up` state and gateway ping responds. |
 | `bth.restart_service` | **Restart Bluetooth Service** | `BTH_SERVICE_STOPPED` | `LOW` | **Yes** | Starts or restarts `bthserv`. **Verification:** Queries Windows Service Control Manager to confirm service is actively `Running`. |
 | `bth.enable_adapter` | **Re-enable Bluetooth Radio** | `BTH_ADAPTER_DISABLED` | `LOW` | **Yes** | Sends enable command to Bluetooth controller device. **Verification:** Queries Device Manager to ensure status returns to `OK` (ErrorCode 0). |
+| `drv.rescan_devices` | **Rescan Hardware Devices** | `DRV_DEVICE_CRASHED_CODE_43` | `LOW` | **Yes** | Re-enumerates Plug and Play hardware tree (`pnputil /scan-devices`). **Verification:** Re-queries PnP devices to verify crashed devices recovered. |
+| `drv.enable_device` | **Re-enable Disabled Hardware** | `DRV_DEVICE_DISABLED_CODE_22` | `LOW` | **Yes** | Sends enable command to disabled PnP device. **Verification:** Queries Device Manager to confirm device returned to `OK` state. |
 
 ---
 
@@ -97,6 +108,9 @@ windoc diagnose network
 
 # Run diagnostics only for Bluetooth
 windoc diagnose bluetooth
+
+# Run diagnostics only for hardware devices and drivers
+windoc diagnose drivers
 
 # List all approved repairs in the registry with safety metadata
 windoc list-repairs

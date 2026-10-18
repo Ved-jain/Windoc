@@ -211,8 +211,23 @@ def scan(
     bth_report = evaluate_bluetooth_hypotheses(bth_results)
     render_diagnosis_report(bth_report)
 
+    console.print()
+
+    # 3. Drivers & Hardware Subsystem
+    from windoc.core.engine import evaluate_driver_hypotheses
+    from windoc.domains.drivers import run_all_driver_checks
+
+    with console.status("[bold green]Analyzing hardware devices & drivers...[/bold green]"):
+        drv_results = run_all_driver_checks()
+    render_diagnostic_results("Hardware & Driver Diagnostics", drv_results)
+    drv_report = evaluate_driver_hypotheses(drv_results)
+    render_diagnosis_report(drv_report)
+
     if fix:
-        _run_auto_fixes([(net_report, "Network"), (bth_report, "Bluetooth")], auto_approve=yes)
+        _run_auto_fixes(
+            [(net_report, "Network"), (bth_report, "Bluetooth"), (drv_report, "Drivers")],
+            auto_approve=yes,
+        )
 
 
 def _run_auto_fixes(reports, auto_approve: bool = False) -> None:
@@ -324,7 +339,17 @@ def fix_cmd(
         bth_results = run_all_bluetooth_checks()
     bth_report = evaluate_bluetooth_hypotheses(bth_results)
 
-    _run_auto_fixes([(net_report, "Network"), (bth_report, "Bluetooth")], auto_approve=yes)
+    from windoc.core.engine import evaluate_driver_hypotheses
+    from windoc.domains.drivers import run_all_driver_checks
+
+    with console.status("[bold green]Checking hardware devices & drivers...[/bold green]"):
+        drv_results = run_all_driver_checks()
+    drv_report = evaluate_driver_hypotheses(drv_results)
+
+    _run_auto_fixes(
+        [(net_report, "Network"), (bth_report, "Bluetooth"), (drv_report, "Drivers")],
+        auto_approve=yes,
+    )
 
 
 @diagnose_app.command(name="network")
@@ -353,6 +378,21 @@ def diagnose_bluetooth() -> None:
     render_diagnostic_results("Bluetooth Diagnostic Report", results)
 
     report = evaluate_bluetooth_hypotheses(results)
+    render_diagnosis_report(report)
+
+
+@diagnose_app.command(name="drivers")
+def diagnose_drivers() -> None:
+    """Diagnose hardware devices, Device Manager error codes, and drivers."""
+    from windoc.core.engine import evaluate_driver_hypotheses
+    from windoc.domains.drivers import run_all_driver_checks
+
+    console.print("[bold cyan]Investigating Hardware Devices & Drivers...[/bold cyan]\n")
+    with console.status("[bold green]Executing driver checks...[/bold green]"):
+        results = run_all_driver_checks()
+    render_diagnostic_results("Hardware & Driver Diagnostic Report", results)
+
+    report = evaluate_driver_hypotheses(results)
     render_diagnosis_report(report)
 
 
@@ -446,7 +486,7 @@ def list_domains() -> None:
 
     table.add_row("network", "Supported (Active)", "Wi-Fi, Ethernet, IP config, Gateway, DNS, Connectivity")
     table.add_row("bluetooth", "Supported (Active)", "Adapter state, service, device connection")
-    table.add_row("drivers", "Planned (Milestone 7)", "Device Manager error codes, missing devices")
+    table.add_row("drivers", "Supported (Active)", "Device Manager error codes, missing drivers, disabled devices")
     table.add_row("update", "Planned (Milestone 8)", "Windows Update services, error codes, logs")
     table.add_row("system", "Planned (Milestone 9)", "System file integrity, component store, services")
     table.add_row("performance", "Planned (Milestone 10)", "CPU, RAM, disk utilization, resource spikes")

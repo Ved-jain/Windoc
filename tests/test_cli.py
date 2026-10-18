@@ -85,8 +85,16 @@ def test_cli_scan() -> None:
         status=CheckStatus.PASS,
         data_source="Get-Service",
     )
+    drv_res = DiagnosticResult(
+        check_id="drv.pnp.all_healthy",
+        domain="drivers",
+        observation="All devices operational",
+        status=CheckStatus.PASS,
+        data_source="Get-PnpDevice",
+    )
     with patch("windoc.cli.run_all_network_checks", return_value=[net_res]), \
-         patch("windoc.domains.bluetooth.run_all_bluetooth_checks", return_value=[bth_res]):
+         patch("windoc.domains.bluetooth.run_all_bluetooth_checks", return_value=[bth_res]), \
+         patch("windoc.domains.drivers.run_all_driver_checks", return_value=[drv_res]):
         result = runner.invoke(app, ["scan"])
         assert result.exit_code == 0
         assert "Starting comprehensive diagnostic scan" in result.stdout
@@ -94,6 +102,7 @@ def test_cli_scan() -> None:
         assert "net.dns.test" in result.stdout
         assert "Bluetooth Diagnostics" in result.stdout
         assert "bth.service.bthserv.state" in result.stdout
+        assert "Hardware & Driver Diagnostics" in result.stdout
 
 
 def test_cli_list_repairs() -> None:
@@ -103,6 +112,7 @@ def test_cli_list_repairs() -> None:
     assert "Controlled Repair Registry" in result.stdout
     assert "net.flush_dns" in result.stdout
     assert "net.renew_dhcp" in result.stdout
+    assert "drv.rescan_devices" in result.stdout
 
 
 def test_cli_repair_cmd_success() -> None:
@@ -151,6 +161,26 @@ def test_cli_diagnose_bluetooth() -> None:
         assert "PASS" in result.stdout
 
 
+def test_cli_diagnose_drivers() -> None:
+    """Verify `windoc diagnose drivers` command output formatting."""
+    from unittest.mock import patch
+    from windoc.core.models import CheckStatus, DiagnosticResult
+
+    mock_result = DiagnosticResult(
+        check_id="drv.pnp.all_healthy",
+        domain="drivers",
+        observation="All devices operational",
+        status=CheckStatus.PASS,
+        data_source="Get-PnpDevice",
+    )
+    with patch("windoc.domains.drivers.run_all_driver_checks", return_value=[mock_result]):
+        result = runner.invoke(app, ["diagnose", "drivers"])
+        assert result.exit_code == 0
+        assert "Hardware & Driver Diagnostic Report" in result.stdout
+        assert "drv.pnp.all_healthy" in result.stdout
+        assert "PASS" in result.stdout
+
+
 def test_cli_activate() -> None:
     """Verify `windoc activate` registers launcher and exits with 0."""
     result = runner.invoke(app, ["activate"])
@@ -181,6 +211,15 @@ def test_cli_fix_all_healthy() -> None:
         recommended_action="None",
         supporting_evidence=[],
     )
+    drv_healthy_verdict = DiagnosisFinding(
+        cause_id="DRV_ALL_HEALTHY",
+        title="All Hardware Devices and Drivers Operational",
+        description="Healthy",
+        confidence=1.0,
+        status=HypothesisStatus.CONFIRMED,
+        recommended_action="None",
+        supporting_evidence=[],
+    )
     mock_net_report = DiagnosisReport(
         domain="network",
         summary="Healthy",
@@ -193,11 +232,19 @@ def test_cli_fix_all_healthy() -> None:
         primary_finding=bth_healthy_verdict,
         all_findings=[bth_healthy_verdict],
     )
+    mock_drv_report = DiagnosisReport(
+        domain="drivers",
+        summary="Healthy",
+        primary_finding=drv_healthy_verdict,
+        all_findings=[drv_healthy_verdict],
+    )
 
     with patch("windoc.cli.run_all_network_checks", return_value=[]), \
          patch("windoc.domains.bluetooth.run_all_bluetooth_checks", return_value=[]), \
+         patch("windoc.domains.drivers.run_all_driver_checks", return_value=[]), \
          patch("windoc.core.engine.evaluate_network_hypotheses", return_value=mock_net_report), \
-         patch("windoc.core.engine.evaluate_bluetooth_hypotheses", return_value=mock_bth_report):
+         patch("windoc.core.engine.evaluate_bluetooth_hypotheses", return_value=mock_bth_report), \
+         patch("windoc.core.engine.evaluate_driver_hypotheses", return_value=mock_drv_report):
         result = runner.invoke(app, ["fix"])
         assert result.exit_code == 0
         assert "All scanned subsystems are healthy" in result.stdout
@@ -227,6 +274,15 @@ def test_cli_fix_with_detected_issue_auto_approve() -> None:
         recommended_action="None",
         supporting_evidence=[],
     )
+    drv_healthy_verdict = DiagnosisFinding(
+        cause_id="DRV_ALL_HEALTHY",
+        title="All Hardware Devices and Drivers Operational",
+        description="Healthy",
+        confidence=1.0,
+        status=HypothesisStatus.CONFIRMED,
+        recommended_action="None",
+        supporting_evidence=[],
+    )
     mock_net_report = DiagnosisReport(
         domain="network",
         summary="DNS resolution failed",
@@ -239,6 +295,12 @@ def test_cli_fix_with_detected_issue_auto_approve() -> None:
         primary_finding=bth_healthy_verdict,
         all_findings=[bth_healthy_verdict],
     )
+    mock_drv_report = DiagnosisReport(
+        domain="drivers",
+        summary="Healthy",
+        primary_finding=drv_healthy_verdict,
+        all_findings=[drv_healthy_verdict],
+    )
     mock_repair_result = RepairExecutionResult(
         repair_id="net.flush_dns",
         name="Flush and Reset DNS Cache",
@@ -248,8 +310,10 @@ def test_cli_fix_with_detected_issue_auto_approve() -> None:
 
     with patch("windoc.cli.run_all_network_checks", return_value=[]), \
          patch("windoc.domains.bluetooth.run_all_bluetooth_checks", return_value=[]), \
+         patch("windoc.domains.drivers.run_all_driver_checks", return_value=[]), \
          patch("windoc.core.engine.evaluate_network_hypotheses", return_value=mock_net_report), \
          patch("windoc.core.engine.evaluate_bluetooth_hypotheses", return_value=mock_bth_report), \
+         patch("windoc.core.engine.evaluate_driver_hypotheses", return_value=mock_drv_report), \
          patch("windoc.cli.execute_repair", return_value=mock_repair_result):
         result = runner.invoke(app, ["fix", "--yes"])
         assert result.exit_code == 0

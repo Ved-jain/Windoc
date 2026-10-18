@@ -14,6 +14,7 @@ from windoc.domains.bluetooth.checks import (
     check_bluetooth_radio_adapter,
     check_bluetooth_services,
 )
+from windoc.domains.drivers.checks import check_pnp_device_errors
 from windoc.repairs.models import RiskLevel
 
 
@@ -115,6 +116,41 @@ def _enable_bth_adapter_verify(**kwargs) -> Tuple[bool, str, List[DiagnosticResu
     return False, "Bluetooth controller remains disabled or reported errors.", results
 
 
+def _rescan_devices_action(**kwargs) -> CommandResult:
+    """Rescan PnP hardware device tree via pnputil."""
+    res = run_command(["pnputil.exe", "/scan-devices"], timeout_seconds=20.0)
+    return res
+
+
+def _rescan_devices_verify(**kwargs) -> Tuple[bool, str, List[DiagnosticResult]]:
+    """Verify whether PnP devices in error have recovered after rescan."""
+    results = check_pnp_device_errors()
+    faults = [r for r in results if r.check_id in ("drv.device.code_43", "drv.device.code_10")]
+    if not faults:
+        return True, "Hardware rescan completed. No active device errors detected.", results
+    return False, f"Hardware rescan completed, but {len(faults)} device(s) remain in error state.", results
+
+
+def _enable_devices_action(**kwargs) -> CommandResult:
+    """Re-enable any disabled PnP devices."""
+    ps_cmd = (
+        "Get-PnpDevice | "
+        "Where-Object { $_.ConfigManagerErrorCode -eq 22 } | "
+        "Enable-PnpDevice -Confirm:$false"
+    )
+    res = run_powershell(ps_cmd, timeout_seconds=20.0)
+    return res
+
+
+def _enable_devices_verify(**kwargs) -> Tuple[bool, str, List[DiagnosticResult]]:
+    """Verify disabled devices have been re-enabled."""
+    results = check_pnp_device_errors()
+    disabled = [r for r in results if r.check_id == "drv.device.code_22"]
+    if not disabled:
+        return True, "All previously disabled hardware devices successfully enabled.", results
+    return False, f"{len(disabled)} device(s) remain disabled.", results
+
+
 class RepairRegistry:
     """Central repository of authorized repair operations."""
 
@@ -212,6 +248,36 @@ class RepairRegistry:
                 timeout_seconds=15.0,
                 action_fn=_enable_bth_adapter_action,
                 verify_fn=_enable_bth_adapter_verify,
+            )
+        )
+
+        self.register(
+            RepairAction(
+                repair_id="drv.rescan_devices",
+                name="Rescan Hardware Devices",
+                description="Triggers Windows Plug and Play to re-enumerate the device tree and reload unresponsive hardware using pnputil.",
+                target_cause_id="DRV_DEVICE_CRASHED_CODE_43",
+                risk_level=RiskLevel.LOW,
+                requires_admin=True,
+                expected_effects="Windows refreshes hardware device states and attempts to reload stalled drivers.",
+                timeout_seconds=20.0,
+                action_fn=_rescan_devices_action,
+                verify_fn=_rescan_devices_verify,
+            )
+        )
+
+        self.register(
+            RepairAction(
+                repair_id="drv.enable_device",
+                name="Re-enable Disabled Hardware Devices",
+                description="Re-enables any connected PnP devices currently disabled in Windows Device Manager.",
+                target_cause_id="DRV_DEVICE_DISABLED_CODE_22",
+                risk_level=RiskLevel.LOW,
+                requires_admin=True,
+                expected_effects="Re-enables disabled hardware components and starts device drivers.",
+                timeout_seconds=20.0,
+                action_fn=_enable_devices_action,
+                verify_fn=_enable_devices_verify,
             )
         )
 

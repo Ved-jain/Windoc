@@ -185,7 +185,10 @@ def render_diagnosis_report(report) -> None:
 
 
 @app.command()
-def scan() -> None:
+def scan(
+    fix: bool = typer.Option(False, "--fix", "-f", help="Automatically offer to fix any detected issues"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve fixes without confirmation prompts (when using --fix)"),
+) -> None:
     """Run an automated diagnostic scan across all supported subsystems."""
     from windoc.core.engine import evaluate_bluetooth_hypotheses, evaluate_network_hypotheses
     from windoc.domains.bluetooth import run_all_bluetooth_checks
@@ -207,6 +210,121 @@ def scan() -> None:
     render_diagnostic_results("Bluetooth Diagnostics", bth_results)
     bth_report = evaluate_bluetooth_hypotheses(bth_results)
     render_diagnosis_report(bth_report)
+
+    if fix:
+        _run_auto_fixes([(net_report, "Network"), (bth_report, "Bluetooth")], auto_approve=yes)
+
+
+def _run_auto_fixes(reports, auto_approve: bool = False) -> None:
+    """Helper to offer and execute verified fixes for diagnosed issues."""
+    issues_to_fix = []
+    for report, domain_name in reports:
+        if report.primary_finding and not report.primary_finding.cause_id.endswith("_ALL_HEALTHY"):
+            repairs = registry.find_for_cause(report.primary_finding.cause_id)
+            if repairs:
+                issues_to_fix.append((report.primary_finding, repairs[0], domain_name))
+
+    if not issues_to_fix:
+        console.print(
+            Panel(
+                "[bold green][OK] All scanned subsystems are healthy![/bold green]\n\n"
+                "No problems were detected. No repairs are needed.",
+                title="[bold green]Scan & Fix: All Good[/bold green]",
+                border_style="green",
+            )
+        )
+        return
+
+    console.print(f"\n[bold yellow]WinDoc found {len(issues_to_fix)} issue(s) that can be fixed:[/bold yellow]\n")
+
+    for finding, repair, domain_name in issues_to_fix:
+        console.print(
+            Panel(
+                f"[bold red]Problem Detected:[/bold red] {finding.title}\n"
+                f"[white]{finding.description}[/white]\n\n"
+                f"[bold cyan]Recommended Fix:[/bold cyan] {repair.name}\n"
+                f"[dim]Subsystem: {domain_name} | Procedure ID: {repair.repair_id} | Risk: {repair.risk_level.value}[/dim]\n"
+                f"[white]Expected Effect: {repair.expected_effects}[/white]",
+                title=f"[bold yellow]Issue: {finding.title}[/bold yellow]",
+                border_style="yellow",
+            )
+        )
+
+        should_apply = auto_approve
+        if not should_apply:
+            should_apply = typer.confirm(f"Apply fix for '{finding.title}' now?", default=True)
+
+        if not should_apply:
+            console.print(f"[dim]Skipped repair: {repair.name}[/dim]\n")
+            continue
+
+        result = execute_repair(repair, auto_approve=True)
+
+        if result.status == RepairStatus.SUCCESS:
+            console.print(
+                Panel(
+                    f"[bold green][OK] Fixed and Verified![/bold green]\n\n"
+                    f"{result.message}",
+                    title="[bold green]Repair Verification: SUCCESS[/bold green]",
+                    border_style="green",
+                )
+            )
+        elif result.status == RepairStatus.PERMISSION_DENIED:
+            console.print(
+                Panel(
+                    f"[bold yellow][!] Administrator Privileges Required[/bold yellow]\n\n"
+                    f"{result.message}\n\n"
+                    f"[white]To apply this fix, open PowerShell or Command Prompt as Administrator and re-run:[/white]\n"
+                    f"[bold cyan]windoc fix[/bold cyan]",
+                    title="[bold yellow]Permission Needed[/bold yellow]",
+                    border_style="yellow",
+                )
+            )
+        elif result.status == RepairStatus.VERIFICATION_FAILED:
+            console.print(
+                Panel(
+                    f"[bold red][!] Repair executed, but symptoms persist.[/bold red]\n\n"
+                    f"{result.message}",
+                    title="[bold red]Repair Verification: FAILED[/bold red]",
+                    border_style="red",
+                )
+            )
+        else:
+            console.print(
+                Panel(
+                    f"[bold red][!] Repair execution failed.[/bold red]\n\n"
+                    f"{result.message}",
+                    title="[bold red]Repair Error[/bold red]",
+                    border_style="red",
+                )
+            )
+
+
+@app.command(name="fix")
+def fix_cmd(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt and automatically apply fixes"),
+) -> None:
+    """Zero-hassle one-click repair: scans your PC, finds problems, and applies verified fixes."""
+    from windoc.core.engine import evaluate_bluetooth_hypotheses, evaluate_network_hypotheses
+    from windoc.domains.bluetooth import run_all_bluetooth_checks
+
+    console.print(
+        Panel(
+            "[bold cyan]WinDoc Auto-Fix[/bold cyan]\n"
+            "Scanning system to detect any issues and automatically apply verified fixes...",
+            border_style="cyan",
+        )
+    )
+
+    with console.status("[bold green]Checking network health...[/bold green]"):
+        net_results = run_all_network_checks()
+    net_report = evaluate_network_hypotheses(net_results)
+
+    with console.status("[bold green]Checking Bluetooth health...[/bold green]"):
+        bth_results = run_all_bluetooth_checks()
+    bth_report = evaluate_bluetooth_hypotheses(bth_results)
+
+    _run_auto_fixes([(net_report, "Network"), (bth_report, "Bluetooth")], auto_approve=yes)
 
 
 @diagnose_app.command(name="network")

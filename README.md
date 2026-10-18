@@ -46,25 +46,24 @@ This registers global launchers in `~/.local/bin` and Windows environment PATH. 
 
 ---
 
-## Usage
+## Everyday Usage (Zero Hassle)
+
+Regular users only need two commands:
 
 ```powershell
-# Display help and available commands
-windoc --help
-
-# Automated scan across all subsystems
+# 1. Scan your PC to see what is going on
 windoc scan
 
-# Targeted diagnostics
-windoc diagnose network
-windoc diagnose bluetooth
-
-# View approved repairs
-windoc list-repairs
-
-# Execute a repair with automatic pre/post verification
-windoc repair net.flush_dns
+# 2. Automatically find problems, apply verified fixes, and re-test
+windoc fix
 ```
+
+For zero-prompt auto-fixing, run:
+```powershell
+windoc fix --yes
+```
+
+> 📖 **Full Command Reference:** For a complete list of all diagnostic cause codes, repair IDs, and advanced developer commands, see the **[Commands & Codes Guide (COMMANDS.md)](COMMANDS.md)**.
 
 ---
 

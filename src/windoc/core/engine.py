@@ -245,3 +245,163 @@ def evaluate_network_hypotheses(evidence: List[DiagnosticResult]) -> DiagnosisRe
         is_conclusive=primary is not None and primary.status in (HypothesisStatus.CONFIRMED, HypothesisStatus.LIKELY),
         summary=summary,
     )
+
+
+def evaluate_bluetooth_hypotheses(evidence: List[DiagnosticResult]) -> DiagnosisReport:
+    """Evaluate Bluetooth diagnostic evidence using deterministic, transparent scoring rules."""
+    evidence_by_id: Dict[str, DiagnosticResult] = {r.check_id: r for r in evidence}
+
+    candidates = [
+        {
+            "cause_id": "BTH_ALL_HEALTHY",
+            "title": "All Bluetooth Subsystems Operational",
+            "description": "Bluetooth Support Service is active and controller hardware is fully operational.",
+            "recommended_action": "No repair needed; Bluetooth subsystem is functioning normally.",
+            "score": 0.0,
+            "supports": [],
+            "refutes": [],
+        },
+        {
+            "cause_id": "BTH_SERVICE_STOPPED",
+            "title": "Bluetooth Support Service (bthserv) Stopped",
+            "description": "The Windows Bluetooth Support Service is stopped or disabled, blocking Bluetooth communications.",
+            "recommended_action": "Restart the Bluetooth Support Service (bthserv).",
+            "score": 0.0,
+            "supports": [],
+            "refutes": [],
+        },
+        {
+            "cause_id": "BTH_ADAPTER_MISSING",
+            "title": "Bluetooth Controller Hardware Missing",
+            "description": "Windows does not detect any Bluetooth radio hardware connected to the motherboard or USB bus.",
+            "recommended_action": "Connect a USB Bluetooth adapter or verify motherboard / BIOS device settings.",
+            "score": 0.0,
+            "supports": [],
+            "refutes": [],
+        },
+        {
+            "cause_id": "BTH_ADAPTER_DISABLED",
+            "title": "Bluetooth Controller Administratively Disabled",
+            "description": "The Bluetooth radio controller is present but disabled in Windows Device Manager (Code 22).",
+            "recommended_action": "Enable the Bluetooth controller in Device Manager or via WinDoc repair.",
+            "score": 0.0,
+            "supports": [],
+            "refutes": [],
+        },
+        {
+            "cause_id": "BTH_DRIVER_DEVICE_ERROR",
+            "title": "Bluetooth Hardware or Driver Error",
+            "description": "The Bluetooth controller reported a driver initialization or device descriptor failure (Code 10/43).",
+            "recommended_action": "Reinstall or update the Bluetooth manufacturer driver or power-cycle the machine.",
+            "score": 0.0,
+            "supports": [],
+            "refutes": [],
+        },
+        {
+            "cause_id": "BTH_PERIPHERAL_ERROR",
+            "title": "Individual Bluetooth Peripheral Error",
+            "description": "The core Bluetooth adapter is operational, but a specific peripheral reported error codes.",
+            "recommended_action": "Unpair and re-pair the affected Bluetooth accessory.",
+            "score": 0.0,
+            "supports": [],
+            "refutes": [],
+        },
+    ]
+
+    c_map = {c["cause_id"]: c for c in candidates}
+
+    # 1. Service state evaluation
+    svc_check = evidence_by_id.get("bth.service.bthserv.state")
+    if svc_check:
+        if svc_check.status == CheckStatus.PASS:
+            c_map["BTH_ALL_HEALTHY"]["score"] += 50
+            c_map["BTH_ALL_HEALTHY"]["supports"].append("Bluetooth Support Service is running.")
+            c_map["BTH_SERVICE_STOPPED"]["score"] -= 90
+            c_map["BTH_SERVICE_STOPPED"]["refutes"].append("Bluetooth Support Service is running.")
+        else:
+            c_map["BTH_SERVICE_STOPPED"]["score"] += 90
+            c_map["BTH_SERVICE_STOPPED"]["supports"].append("Bluetooth Support Service is stopped or disabled.")
+            c_map["BTH_ALL_HEALTHY"]["score"] -= 80
+            c_map["BTH_ALL_HEALTHY"]["refutes"].append("Bluetooth Support Service is not running.")
+
+    # 2. Adapter controller presence & state evaluation
+    presence_check = evidence_by_id.get("bth.adapter.presence")
+    operational_check = evidence_by_id.get("bth.adapter.operational")
+    disabled_check = evidence_by_id.get("bth.adapter.disabled")
+    driver_error_check = evidence_by_id.get("bth.adapter.driver_error")
+
+    if presence_check and presence_check.status == CheckStatus.FAIL:
+        c_map["BTH_ADAPTER_MISSING"]["score"] += 100
+        c_map["BTH_ADAPTER_MISSING"]["supports"].append("No physical Bluetooth controller hardware detected.")
+        c_map["BTH_ALL_HEALTHY"]["score"] -= 100
+        c_map["BTH_ALL_HEALTHY"]["refutes"].append("No Bluetooth adapter hardware detected.")
+    elif operational_check and operational_check.status == CheckStatus.PASS:
+        c_map["BTH_ALL_HEALTHY"]["score"] += 50
+        c_map["BTH_ALL_HEALTHY"]["supports"].append("Physical Bluetooth controller is operational.")
+        c_map["BTH_ADAPTER_MISSING"]["score"] -= 90
+        c_map["BTH_ADAPTER_DISABLED"]["score"] -= 90
+        c_map["BTH_DRIVER_DEVICE_ERROR"]["score"] -= 90
+    elif disabled_check:
+        c_map["BTH_ADAPTER_DISABLED"]["score"] += 95
+        c_map["BTH_ADAPTER_DISABLED"]["supports"].append("Controller is administratively disabled (Code 22).")
+        c_map["BTH_ALL_HEALTHY"]["score"] -= 80
+    elif driver_error_check:
+        c_map["BTH_DRIVER_DEVICE_ERROR"]["score"] += 95
+        c_map["BTH_DRIVER_DEVICE_ERROR"]["supports"].append(f"Controller reported hardware/driver error: {driver_error_check.error_code}.")
+        c_map["BTH_ALL_HEALTHY"]["score"] -= 80
+
+    # 3. Peripheral evaluation
+    has_peripheral_errors = any(k.startswith("bth.peripheral.") and r.status == CheckStatus.WARNING for k, r in evidence_by_id.items())
+    if has_peripheral_errors and operational_check and operational_check.status == CheckStatus.PASS:
+        c_map["BTH_PERIPHERAL_ERROR"]["score"] += 80
+        c_map["BTH_PERIPHERAL_ERROR"]["supports"].append("Core controller is operational, but paired peripheral reported device error.")
+
+    # 4. Normalization
+    findings: List[DiagnosisFinding] = []
+    for c in candidates:
+        raw_score = max(0.0, min(100.0, c["score"]))
+        confidence = round(raw_score / 100.0, 2)
+
+        if confidence >= 0.80:
+            status = HypothesisStatus.CONFIRMED
+        elif confidence >= 0.50:
+            status = HypothesisStatus.LIKELY
+        elif confidence >= 0.25:
+            status = HypothesisStatus.POSSIBLE
+        elif confidence <= 0.10:
+            status = HypothesisStatus.RULED_OUT
+        else:
+            status = HypothesisStatus.INCONCLUSIVE
+
+        findings.append(
+            DiagnosisFinding(
+                cause_id=c["cause_id"],
+                title=c["title"],
+                description=c["description"],
+                confidence=confidence,
+                status=status,
+                supporting_evidence=c["supports"],
+                refuting_evidence=c["refutes"],
+                recommended_action=c["recommended_action"],
+            )
+        )
+
+    findings.sort(key=lambda f: f.confidence, reverse=True)
+    primary = findings[0] if findings and findings[0].confidence >= 0.50 else None
+
+    if primary and primary.status == HypothesisStatus.CONFIRMED:
+        summary = f"Confirmed root cause: {primary.title} (Confidence: {int(primary.confidence * 100)}%)."
+    elif primary and primary.status == HypothesisStatus.LIKELY:
+        summary = f"Probable root cause: {primary.title} (Confidence: {int(primary.confidence * 100)}%)."
+    else:
+        summary = "Diagnostic evidence is inconclusive; manual investigation required."
+
+    return DiagnosisReport(
+        domain="bluetooth",
+        primary_finding=primary,
+        all_findings=findings,
+        evidence_count=len(evidence),
+        is_conclusive=primary is not None and primary.status in (HypothesisStatus.CONFIRMED, HypothesisStatus.LIKELY),
+        summary=summary,
+    )
+

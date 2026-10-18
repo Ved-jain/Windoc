@@ -143,7 +143,7 @@ def render_diagnosis_report(report) -> None:
     primary = report.primary_finding
     conf_pct = int(primary.confidence * 100)
 
-    if primary.cause_id == "NET_ALL_HEALTHY":
+    if primary.cause_id.endswith("_ALL_HEALTHY"):
         content = (
             f"[bold green][OK] {primary.title}[/bold green] (Confidence: {conf_pct}%)\n\n"
             f"[white]{primary.description}[/white]\n\n"
@@ -209,6 +209,21 @@ def diagnose_network() -> None:
     render_diagnostic_results("Network Diagnostic Report", results)
 
     report = evaluate_network_hypotheses(results)
+    render_diagnosis_report(report)
+
+
+@diagnose_app.command(name="bluetooth")
+def diagnose_bluetooth() -> None:
+    """Diagnose Bluetooth controller hardware, services, and paired accessories."""
+    from windoc.core.engine import evaluate_bluetooth_hypotheses
+    from windoc.domains.bluetooth import run_all_bluetooth_checks
+
+    console.print("[bold cyan]Investigating Bluetooth subsystem...[/bold cyan]\n")
+    with console.status("[bold green]Executing Bluetooth checks...[/bold green]"):
+        results = run_all_bluetooth_checks()
+    render_diagnostic_results("Bluetooth Diagnostic Report", results)
+
+    report = evaluate_bluetooth_hypotheses(results)
     render_diagnosis_report(report)
 
 
@@ -301,7 +316,7 @@ def list_domains() -> None:
     table.add_column("Description", style="white")
 
     table.add_row("network", "Supported (Active)", "Wi-Fi, Ethernet, IP config, Gateway, DNS, Connectivity")
-    table.add_row("bluetooth", "Planned (Milestone 6)", "Adapter state, service, device connection")
+    table.add_row("bluetooth", "Supported (Active)", "Adapter state, service, device connection")
     table.add_row("drivers", "Planned (Milestone 7)", "Device Manager error codes, missing devices")
     table.add_row("update", "Planned (Milestone 8)", "Windows Update services, error codes, logs")
     table.add_row("system", "Planned (Milestone 9)", "System file integrity, component store, services")

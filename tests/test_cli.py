@@ -122,3 +122,23 @@ def test_cli_repair_unknown_id() -> None:
     assert "Unknown repair" in result.stdout
 
 
+def test_cli_diagnose_bluetooth() -> None:
+    """Verify `windoc diagnose bluetooth` command output formatting."""
+    from unittest.mock import patch
+    from windoc.core.models import CheckStatus, DiagnosticResult
+
+    mock_result = DiagnosticResult(
+        check_id="bth.service.bthserv.state",
+        domain="bluetooth",
+        observation="Service running",
+        status=CheckStatus.PASS,
+        data_source="Get-Service",
+    )
+    with patch("windoc.domains.bluetooth.run_all_bluetooth_checks", return_value=[mock_result]):
+        result = runner.invoke(app, ["diagnose", "bluetooth"])
+        assert result.exit_code == 0
+        assert "Bluetooth Diagnostic Report" in result.stdout
+        assert "bth.service.bthserv.state" in result.stdout
+        assert "PASS" in result.stdout
+
+

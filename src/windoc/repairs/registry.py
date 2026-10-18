@@ -10,6 +10,10 @@ from windoc.domains.network.checks import (
     check_ip_configuration,
     check_network_adapters,
 )
+from windoc.domains.bluetooth.checks import (
+    check_bluetooth_radio_adapter,
+    check_bluetooth_services,
+)
 from windoc.repairs.models import RiskLevel
 
 
@@ -74,6 +78,41 @@ def _restart_adapter_verify(**kwargs) -> Tuple[bool, str, List[DiagnosticResult]
     if is_up:
         return True, "Network adapter successfully re-initialized and is operational.", results
     return False, "Network adapter remains disconnected or disabled.", results
+
+
+def _restart_bthserv_action(**kwargs) -> CommandResult:
+    """Restart Bluetooth Support Service."""
+    res, _ = run_powershell("Restart-Service -Name 'bthserv' -Force", timeout_seconds=15.0)
+    return res
+
+
+def _restart_bthserv_verify(**kwargs) -> Tuple[bool, str, List[DiagnosticResult]]:
+    """Verify Bluetooth Support Service is running."""
+    results = check_bluetooth_services()
+    is_running = any(r.check_id == "bth.service.bthserv.state" and r.status == CheckStatus.PASS for r in results)
+    if is_running:
+        return True, "Bluetooth Support Service is running.", results
+    return False, "Bluetooth Support Service failed to start.", results
+
+
+def _enable_bth_adapter_action(**kwargs) -> CommandResult:
+    """Enable disabled Bluetooth adapter via PnP device management."""
+    ps_cmd = (
+        "Get-PnpDevice -Class Bluetooth | "
+        "Where-Object { $_.ConfigManagerErrorCode -eq 22 } | "
+        "Enable-PnpDevice -Confirm:$false"
+    )
+    res, _ = run_powershell(ps_cmd, timeout_seconds=15.0)
+    return res
+
+
+def _enable_bth_adapter_verify(**kwargs) -> Tuple[bool, str, List[DiagnosticResult]]:
+    """Verify Bluetooth adapter is operational after enabling."""
+    results = check_bluetooth_radio_adapter()
+    is_ok = any(r.check_id == "bth.adapter.operational" and r.status == CheckStatus.PASS for r in results)
+    if is_ok:
+        return True, "Bluetooth controller successfully enabled and operational.", results
+    return False, "Bluetooth controller remains disabled or reported errors.", results
 
 
 class RepairRegistry:
@@ -143,6 +182,36 @@ class RepairRegistry:
                 timeout_seconds=20.0,
                 action_fn=_restart_adapter_action,
                 verify_fn=_restart_adapter_verify,
+            )
+        )
+
+        self.register(
+            RepairAction(
+                repair_id="bth.restart_service",
+                name="Restart Bluetooth Support Service",
+                description="Restarts the Windows Bluetooth Support Service (bthserv) to recover stalled Bluetooth communications.",
+                target_cause_id="BTH_SERVICE_STOPPED",
+                risk_level=RiskLevel.LOW,
+                requires_admin=True,
+                expected_effects="Briefly reloads Bluetooth subsystem services.",
+                timeout_seconds=15.0,
+                action_fn=_restart_bthserv_action,
+                verify_fn=_restart_bthserv_verify,
+            )
+        )
+
+        self.register(
+            RepairAction(
+                repair_id="bth.enable_adapter",
+                name="Enable Bluetooth Controller",
+                description="Re-enables an administratively disabled Bluetooth radio adapter via Windows PnP Device Manager.",
+                target_cause_id="BTH_ADAPTER_DISABLED",
+                risk_level=RiskLevel.LOW,
+                requires_admin=True,
+                expected_effects="Enables Bluetooth radio and restores device discovery / pairing.",
+                timeout_seconds=15.0,
+                action_fn=_enable_bth_adapter_action,
+                verify_fn=_enable_bth_adapter_verify,
             )
         )
 

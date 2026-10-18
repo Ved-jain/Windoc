@@ -4,6 +4,7 @@ from windoc.core.engine import (
     DiagnosisFinding,
     DiagnosisReport,
     HypothesisStatus,
+    evaluate_bluetooth_hypotheses,
     evaluate_network_hypotheses,
 )
 from windoc.core.models import (
@@ -30,4 +31,5 @@ __all__ = [
     "DiagnosisFinding",
     "DiagnosisReport",
     "evaluate_network_hypotheses",
+    "evaluate_bluetooth_hypotheses",
 ]

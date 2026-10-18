@@ -15,6 +15,7 @@ from windoc.domains.bluetooth.checks import (
     check_bluetooth_services,
 )
 from windoc.domains.drivers.checks import check_pnp_device_errors
+from windoc.domains.performance.checks import check_disk_space
 from windoc.domains.system.checks import (
     check_component_store_health,
     check_core_system_services,
@@ -213,6 +214,35 @@ def _restart_system_services_verify(**kwargs) -> Tuple[bool, str, List[Diagnosti
     return False, f"Core service(s) failed to start: {stopped[0].observation}", results
 
 
+def _clean_temp_files_action(**kwargs) -> CommandResult:
+    """Safely purge user and Windows temporary cache directories."""
+    ps_cmd = (
+        "Get-ChildItem -Path $env:TEMP -Recurse -Force -ErrorAction SilentlyContinue | "
+        "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue"
+    )
+    res, _ = run_powershell(ps_cmd, timeout_seconds=30.0)
+    return res
+
+
+def _clean_temp_files_verify(**kwargs) -> Tuple[bool, str, List[DiagnosticResult]]:
+    """Verify disk space after cleaning temporary files."""
+    res = check_disk_space()
+    return True, f"Temporary file cache cleared. Current status: {res.observation}", [res]
+
+
+def _empty_recycle_bin_action(**kwargs) -> CommandResult:
+    """Empty the Windows Recycle Bin on all drives."""
+    ps_cmd = "Clear-RecycleBin -Force -ErrorAction SilentlyContinue"
+    res, _ = run_powershell(ps_cmd, timeout_seconds=15.0)
+    return res
+
+
+def _empty_recycle_bin_verify(**kwargs) -> Tuple[bool, str, List[DiagnosticResult]]:
+    """Verify disk space after emptying the Recycle Bin."""
+    res = check_disk_space()
+    return True, f"Recycle Bin purged. Current status: {res.observation}", [res]
+
+
 class RepairRegistry:
     """Central repository of authorized repair operations."""
 
@@ -385,6 +415,36 @@ class RepairRegistry:
                 timeout_seconds=20.0,
                 action_fn=_restart_system_services_action,
                 verify_fn=_restart_system_services_verify,
+            )
+        )
+
+        self.register(
+            RepairAction(
+                repair_id="perf.clean_temp_files",
+                name="Clean Temporary Files Cache",
+                description="Safely removes temporary application and scratch files from user %TEMP% to free storage.",
+                target_cause_id="PERF_DISK_LOW_SPACE",
+                risk_level=RiskLevel.LOW,
+                requires_admin=False,
+                expected_effects="Frees disk space on system volume C: without affecting personal files.",
+                timeout_seconds=30.0,
+                action_fn=_clean_temp_files_action,
+                verify_fn=_clean_temp_files_verify,
+            )
+        )
+
+        self.register(
+            RepairAction(
+                repair_id="perf.empty_recycle_bin",
+                name="Empty Windows Recycle Bin",
+                description="Purges deleted files residing in the Windows Recycle Bin to reclaim disk space.",
+                target_cause_id="PERF_DISK_LOW_SPACE",
+                risk_level=RiskLevel.LOW,
+                requires_admin=False,
+                expected_effects="Permanently removes deleted files from the Recycle Bin and frees storage space.",
+                timeout_seconds=15.0,
+                action_fn=_empty_recycle_bin_action,
+                verify_fn=_empty_recycle_bin_verify,
             )
         )
 

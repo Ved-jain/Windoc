@@ -96,6 +96,15 @@ Every issue WinDoc detects is assigned a transparent, deterministic **Root Cause
 | `SYS_RECENT_CRASHES` | **Recent Blue Screen (BSOD)** | PC restarted unexpectedly, blue screen crash recently occurred. | Crash minidump files found in `C:\Windows\Minidump` modified within last 7 days. |
 | `SYS_SAFE_MODE_ACTIVE` | **Safe Mode Boot Detected** | Low resolution screen, audio and networking disabled. | CIM BootupState reports system booted in Safe or Diagnostic mode. |
 
+### Performance & System Resources (`perf`)
+| Cause Code | Plain-English Meaning | Common Symptom | How WinDoc Detects It |
+| :--- | :--- | :--- | :--- |
+| `PERF_ALL_HEALTHY` | **System Performance Optimal** | PC feels snappy, responsive, and balanced. | CPU load < 90%, RAM used < 92%, Drive C: free > 10 GB, uptime normal. |
+| `PERF_DISK_LOW_SPACE` | **Low Disk Space on C:** | Windows "Low Disk Space" warning, updates fail to unpack. | System volume C: reports less than 10 GB or less than 10% free space remaining. |
+| `PERF_MEMORY_EXHAUSTION` | **Severe Physical RAM Starvation** | Apps freeze, browser tabs crash, mouse stutters. | Total physical RAM consumption sustained above 92%, triggering severe disk paging. |
+| `PERF_CPU_SATURATION` | **High CPU Utilization** | Fan running loud continuously, sluggish UI response. | Processor utilization measured above 90% sustained average across CPU cores. |
+| `PERF_HIGH_UPTIME_DEGRADATION` | **Extended System Uptime** | Gradual slowdown over weeks of continuous sleep/wake. | Continuous Windows system uptime exceeds 30 days without a full reboot. |
+
 ---
 
 ## 4. Controlled Repair Procedures Reference
@@ -114,6 +123,8 @@ WinDoc only executes safe, allowlisted, non-destructive repair procedures. **Bli
 | `upd.reset_services` | **Reset Update Services** | `UPD_SERVICES_DISABLED` | `LOW` | **Yes** | Re-enables and starts `wuauserv`, `bits`, and `cryptsvc`. **Verification:** Queries Service Control Manager to confirm services are enabled. |
 | `sys.repair_component_store` | **Repair Component Store (DISM)** | `SYS_COMPONENT_STORE_CORRUPT` | `MEDIUM` | **Yes** | Runs `dism.exe /Online /Cleanup-Image /RestoreHealth`. **Verification:** Confirms component store is restored to clean operational status. |
 | `sys.restart_services` | **Restore System Services** | `SYS_CORE_SERVICES_STOPPED` | `LOW` | **Yes** | Re-enables and starts essential OS services (`EventLog`, `Winmgmt`, `RpcSs`). **Verification:** Queries Service Control Manager to verify services are `Running`. |
+| `perf.clean_temp_files` | **Clean Temporary Cache Files** | `PERF_DISK_LOW_SPACE` | `LOW` | No | Safely purges temporary cache files in `%TEMP%`. **Verification:** Re-queries disk volume C: to verify freed space. |
+| `perf.empty_recycle_bin` | **Empty Windows Recycle Bin** | `PERF_DISK_LOW_SPACE` | `LOW` | No | Purges all deleted files residing in Windows Recycle Bin. **Verification:** Re-queries disk volume C: to verify reclaimed space. |
 
 ---
 
@@ -136,6 +147,9 @@ windoc diagnose update
 
 # Run diagnostics only for Windows system integrity and core services
 windoc diagnose system
+
+# Run diagnostics only for CPU, RAM, disk space, and performance
+windoc diagnose performance
 
 # List all approved repairs in the registry with safety metadata
 windoc list-repairs

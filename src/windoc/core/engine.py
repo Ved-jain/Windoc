@@ -839,4 +839,160 @@ def evaluate_system_hypotheses(evidence: List[DiagnosticResult]) -> DiagnosisRep
     )
 
 
+def evaluate_performance_hypotheses(evidence: List[DiagnosticResult]) -> DiagnosisReport:
+    """Evaluate candidate root causes for Windows performance and resource issues based on evidence."""
+    ev_map: Dict[str, DiagnosticResult] = {r.check_id: r for r in evidence}
+
+    h_healthy = {"score": 50.0, "supports": [], "refutes": []}
+    h_cpu = {"score": 0.0, "supports": [], "refutes": []}
+    h_ram = {"score": 0.0, "supports": [], "refutes": []}
+    h_disk = {"score": 0.0, "supports": [], "refutes": []}
+    h_uptime = {"score": 0.0, "supports": [], "refutes": []}
+
+    cpu_res = ev_map.get("perf.cpu.utilization")
+    ram_res = ev_map.get("perf.memory.pressure")
+    disk_res = ev_map.get("perf.disk.space")
+    uptime_res = ev_map.get("perf.system.uptime")
+
+    if cpu_res:
+        if cpu_res.status == CheckStatus.PASS:
+            h_healthy["score"] += 15.0
+            h_healthy["supports"].append(cpu_res.observation)
+            h_cpu["refutes"].append("CPU load is within normal limits")
+        elif cpu_res.status in (CheckStatus.WARNING, CheckStatus.FAIL):
+            h_cpu["score"] += 90.0
+            h_cpu["supports"].append(cpu_res.observation)
+            h_healthy["score"] = 0.0
+            h_healthy["refutes"].append("Sustained CPU saturation detected")
+
+    if ram_res:
+        if ram_res.status == CheckStatus.PASS:
+            h_healthy["score"] += 15.0
+            h_healthy["supports"].append(ram_res.observation)
+            h_ram["refutes"].append("Physical RAM capacity is sufficient")
+        elif ram_res.status in (CheckStatus.WARNING, CheckStatus.FAIL):
+            h_ram["score"] += 90.0
+            h_ram["supports"].append(ram_res.observation)
+            h_healthy["score"] = 0.0
+            h_healthy["refutes"].append("Physical RAM starvation detected")
+
+    if disk_res:
+        if disk_res.status == CheckStatus.PASS:
+            h_healthy["score"] += 15.0
+            h_healthy["supports"].append(disk_res.observation)
+            h_disk["refutes"].append("System drive C: has adequate free storage")
+        elif disk_res.status in (CheckStatus.WARNING, CheckStatus.FAIL):
+            h_disk["score"] += 95.0
+            h_disk["supports"].append(disk_res.observation)
+            h_healthy["score"] = 0.0
+            h_healthy["refutes"].append("System drive C: is critically low on disk space")
+
+    if uptime_res:
+        if uptime_res.status == CheckStatus.PASS:
+            h_healthy["score"] += 5.0
+            h_healthy["supports"].append(uptime_res.observation)
+            h_uptime["refutes"].append("System uptime is within standard thresholds")
+        elif uptime_res.status in (CheckStatus.WARNING, CheckStatus.FAIL):
+            h_uptime["score"] += 80.0
+            h_uptime["supports"].append(uptime_res.observation)
+            h_healthy["score"] = max(0.0, h_healthy["score"] - 15.0)
+
+    candidates = [
+        {
+            "cause_id": "PERF_ALL_HEALTHY",
+            "title": "System Performance & Resources Optimal",
+            "description": "CPU utilization, physical RAM availability, and system drive disk space are all healthy.",
+            "score": h_healthy["score"],
+            "supports": h_healthy["supports"],
+            "refutes": h_healthy["refutes"],
+            "recommended_action": "No repair needed; resources are balanced and operational.",
+        },
+        {
+            "cause_id": "PERF_DISK_LOW_SPACE",
+            "title": "Critically Low Disk Space on System Drive (C:)",
+            "description": "System volume C: has less than 10 GB or 10% free space remaining, preventing updates and paging.",
+            "score": h_disk["score"],
+            "supports": h_disk["supports"],
+            "refutes": h_disk["refutes"],
+            "recommended_action": "Clean temporary cache files and empty the Recycle Bin to recover storage space.",
+        },
+        {
+            "cause_id": "PERF_MEMORY_EXHAUSTION",
+            "title": "Severe Physical Memory (RAM) Exhaustion",
+            "description": "Over 92% of available physical RAM is consumed, causing disk paging thrashing and unresponsive applications.",
+            "score": h_ram["score"],
+            "supports": h_ram["supports"],
+            "refutes": h_ram["refutes"],
+            "recommended_action": "Close high-memory background browser tabs or background processes.",
+        },
+        {
+            "cause_id": "PERF_CPU_SATURATION",
+            "title": "Sustained High CPU Utilization",
+            "description": "Processor load is sustained above 90%, causing system lag and fan throttling.",
+            "score": h_cpu["score"],
+            "supports": h_cpu["supports"],
+            "refutes": h_cpu["refutes"],
+            "recommended_action": "Identify and terminate runaway background tasks or infinite loop scripts.",
+        },
+        {
+            "cause_id": "PERF_HIGH_UPTIME_DEGRADATION",
+            "title": "Extended Continuous Operating Uptime",
+            "description": "Windows has been continuously operating for more than 30 days without a reboot.",
+            "score": h_uptime["score"],
+            "supports": h_uptime["supports"],
+            "refutes": h_uptime["refutes"],
+            "recommended_action": "Restart your computer to flush accumulated kernel leaks and cached handles.",
+        },
+    ]
+
+    findings: List[DiagnosisFinding] = []
+    for c in candidates:
+        raw_score = max(0.0, min(100.0, c["score"]))
+        confidence = round(raw_score / 100.0, 2)
+
+        if confidence >= 0.80:
+            status = HypothesisStatus.CONFIRMED
+        elif confidence >= 0.50:
+            status = HypothesisStatus.LIKELY
+        elif confidence >= 0.25:
+            status = HypothesisStatus.POSSIBLE
+        elif confidence <= 0.10:
+            status = HypothesisStatus.RULED_OUT
+        else:
+            status = HypothesisStatus.INCONCLUSIVE
+
+        findings.append(
+            DiagnosisFinding(
+                cause_id=c["cause_id"],
+                title=c["title"],
+                description=c["description"],
+                confidence=confidence,
+                status=status,
+                supporting_evidence=c["supports"],
+                refuting_evidence=c["refutes"],
+                recommended_action=c["recommended_action"],
+            )
+        )
+
+    findings.sort(key=lambda f: f.confidence, reverse=True)
+    primary = findings[0] if findings and findings[0].confidence >= 0.50 else None
+
+    if primary and primary.status == HypothesisStatus.CONFIRMED:
+        summary = f"Confirmed root cause: {primary.title} (Confidence: {int(primary.confidence * 100)}%)."
+    elif primary and primary.status == HypothesisStatus.LIKELY:
+        summary = f"Probable root cause: {primary.title} (Confidence: {int(primary.confidence * 100)}%)."
+    else:
+        summary = "Diagnostic evidence is inconclusive; manual investigation required."
+
+    return DiagnosisReport(
+        domain="performance",
+        primary_finding=primary,
+        all_findings=findings,
+        evidence_count=len(evidence),
+        is_conclusive=primary is not None and primary.status in (HypothesisStatus.CONFIRMED, HypothesisStatus.LIKELY),
+        summary=summary,
+    )
+
+
+
 

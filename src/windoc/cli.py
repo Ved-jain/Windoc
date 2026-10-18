@@ -247,6 +247,18 @@ def scan(
     sys_report = evaluate_system_hypotheses(sys_results)
     render_diagnosis_report(sys_report)
 
+    console.print()
+
+    # 6. Performance & System Resources
+    from windoc.core.engine import evaluate_performance_hypotheses
+    from windoc.domains.performance import run_all_performance_checks
+
+    with console.status("[bold green]Analyzing CPU, memory, and disk resources...[/bold green]"):
+        perf_results = run_all_performance_checks()
+    render_diagnostic_results("Performance & Resource Diagnostics", perf_results)
+    perf_report = evaluate_performance_hypotheses(perf_results)
+    render_diagnosis_report(perf_report)
+
     if fix:
         _run_auto_fixes(
             [
@@ -255,6 +267,7 @@ def scan(
                 (drv_report, "Drivers"),
                 (upd_report, "Windows Update"),
                 (sys_report, "System"),
+                (perf_report, "Performance"),
             ],
             auto_approve=yes,
         )
@@ -390,6 +403,13 @@ def fix_cmd(
         sys_results = run_all_system_checks()
     sys_report = evaluate_system_hypotheses(sys_results)
 
+    from windoc.core.engine import evaluate_performance_hypotheses
+    from windoc.domains.performance import run_all_performance_checks
+
+    with console.status("[bold green]Checking performance and storage capacity...[/bold green]"):
+        perf_results = run_all_performance_checks()
+    perf_report = evaluate_performance_hypotheses(perf_results)
+
     _run_auto_fixes(
         [
             (net_report, "Network"),
@@ -397,6 +417,7 @@ def fix_cmd(
             (drv_report, "Drivers"),
             (upd_report, "Windows Update"),
             (sys_report, "System"),
+            (perf_report, "Performance"),
         ],
         auto_approve=yes,
     )
@@ -473,6 +494,21 @@ def diagnose_system() -> None:
     render_diagnostic_results("Windows System Diagnostic Report", results)
 
     report = evaluate_system_hypotheses(results)
+    render_diagnosis_report(report)
+
+
+@diagnose_app.command(name="performance")
+def diagnose_performance() -> None:
+    """Diagnose CPU load, physical RAM pressure, disk space, and system uptime."""
+    from windoc.core.engine import evaluate_performance_hypotheses
+    from windoc.domains.performance import run_all_performance_checks
+
+    console.print("[bold cyan]Investigating System Performance & Resource Capacity...[/bold cyan]\n")
+    with console.status("[bold green]Executing performance benchmarks & checks...[/bold green]"):
+        results = run_all_performance_checks()
+    render_diagnostic_results("Performance & Resource Diagnostic Report", results)
+
+    report = evaluate_performance_hypotheses(results)
     render_diagnosis_report(report)
 
 
@@ -576,7 +612,7 @@ def list_domains() -> None:
     table.add_row("drivers", "Supported (Active)", "Device Manager error codes, missing drivers, disabled devices")
     table.add_row("update", "Supported (Active)", "Windows Update services, error codes, logs")
     table.add_row("system", "Supported (Active)", "System file integrity, component store, services")
-    table.add_row("performance", "Planned (Milestone 10)", "CPU, RAM, disk utilization, resource spikes")
+    table.add_row("performance", "Supported (Active)", "CPU load, physical RAM pressure, disk space, uptime")
 
     console.print(table)
 

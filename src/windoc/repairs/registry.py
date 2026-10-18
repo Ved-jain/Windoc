@@ -15,6 +15,7 @@ from windoc.domains.bluetooth.checks import (
     check_bluetooth_services,
 )
 from windoc.domains.drivers.checks import check_pnp_device_errors
+from windoc.domains.update.checks import check_update_services
 from windoc.repairs.models import RiskLevel
 
 
@@ -151,6 +152,27 @@ def _enable_devices_verify(**kwargs) -> Tuple[bool, str, List[DiagnosticResult]]
     return False, f"{len(disabled)} device(s) remain disabled.", results
 
 
+def _reset_update_services_action(**kwargs) -> CommandResult:
+    """Re-enable and start core Windows Update background services."""
+    ps_cmd = (
+        "Set-Service -Name 'wuauserv' -StartupType Automatic -ErrorAction SilentlyContinue; "
+        "Set-Service -Name 'bits' -StartupType Manual -ErrorAction SilentlyContinue; "
+        "Set-Service -Name 'cryptsvc' -StartupType Automatic -ErrorAction SilentlyContinue; "
+        "Start-Service -Name 'wuauserv', 'cryptsvc' -ErrorAction SilentlyContinue"
+    )
+    res, _ = run_powershell(ps_cmd, timeout_seconds=20.0)
+    return res
+
+
+def _reset_update_services_verify(**kwargs) -> Tuple[bool, str, List[DiagnosticResult]]:
+    """Verify Windows Update services are no longer disabled."""
+    results = check_update_services()
+    disabled = [r for r in results if r.check_id == "upd.service.disabled"]
+    if not disabled:
+        return True, "Windows Update background services re-enabled and restored.", results
+    return False, f"Failed to restore all update services: {disabled[0].observation}", results
+
+
 class RepairRegistry:
     """Central repository of authorized repair operations."""
 
@@ -278,6 +300,21 @@ class RepairRegistry:
                 timeout_seconds=20.0,
                 action_fn=_enable_devices_action,
                 verify_fn=_enable_devices_verify,
+            )
+        )
+
+        self.register(
+            RepairAction(
+                repair_id="upd.reset_services",
+                name="Reset and Enable Windows Update Services",
+                description="Restores startup configuration and starts wuauserv, bits, and cryptsvc background services.",
+                target_cause_id="UPD_SERVICES_DISABLED",
+                risk_level=RiskLevel.LOW,
+                requires_admin=True,
+                expected_effects="Enables Windows Update and cryptographic services to resume downloading updates.",
+                timeout_seconds=20.0,
+                action_fn=_reset_update_services_action,
+                verify_fn=_reset_update_services_verify,
             )
         )
 

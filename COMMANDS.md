@@ -80,6 +80,13 @@ Every issue WinDoc detects is assigned a transparent, deterministic **Root Cause
 | `DRV_DEVICE_DISABLED_CODE_22` | **Hardware Device Disabled** | Hardware component is disabled by user or administrative policy. | PnP query finds active device with ConfigManagerErrorCode `22` (Device disabled). |
 | `DRV_REBOOT_REQUIRED_CODE_14` | **Restart Required for Driver** | New driver installed, but device does not work until reboot. | PnP query finds active device with ConfigManagerErrorCode `14` (Restart required). |
 
+### Windows Update Domain (`upd`)
+| Cause Code | Plain-English Meaning | Common Symptom | How WinDoc Detects It |
+| :--- | :--- | :--- | :--- |
+| `UPD_ALL_HEALTHY` | **Windows Update Operational** | Updates download and install normally, update history intact. | Update background services (wuauserv, bits, cryptsvc) configured properly; cache verified. |
+| `UPD_SERVICES_DISABLED` | **Update Services Disabled** | Error "We couldn't connect to the update service", updates fail to check. | Core update services configured with StartType `Disabled` (Code 4). |
+| `UPD_REBOOT_REQUIRED` | **Restart Required for Updates** | Updates stuck at "Pending restart", new updates won't install. | Registry query confirms `RebootRequired` or CBS `RebootPending` flags are active. |
+
 ---
 
 ## 4. Controlled Repair Procedures Reference
@@ -95,6 +102,7 @@ WinDoc only executes safe, allowlisted, non-destructive repair procedures. **Bli
 | `bth.enable_adapter` | **Re-enable Bluetooth Radio** | `BTH_ADAPTER_DISABLED` | `LOW` | **Yes** | Sends enable command to Bluetooth controller device. **Verification:** Queries Device Manager to ensure status returns to `OK` (ErrorCode 0). |
 | `drv.rescan_devices` | **Rescan Hardware Devices** | `DRV_DEVICE_CRASHED_CODE_43` | `LOW` | **Yes** | Re-enumerates Plug and Play hardware tree (`pnputil /scan-devices`). **Verification:** Re-queries PnP devices to verify crashed devices recovered. |
 | `drv.enable_device` | **Re-enable Disabled Hardware** | `DRV_DEVICE_DISABLED_CODE_22` | `LOW` | **Yes** | Sends enable command to disabled PnP device. **Verification:** Queries Device Manager to confirm device returned to `OK` state. |
+| `upd.reset_services` | **Reset Update Services** | `UPD_SERVICES_DISABLED` | `LOW` | **Yes** | Re-enables and starts `wuauserv`, `bits`, and `cryptsvc`. **Verification:** Queries Service Control Manager to confirm services are enabled. |
 
 ---
 
@@ -111,6 +119,9 @@ windoc diagnose bluetooth
 
 # Run diagnostics only for hardware devices and drivers
 windoc diagnose drivers
+
+# Run diagnostics only for Windows Update
+windoc diagnose update
 
 # List all approved repairs in the registry with safety metadata
 windoc list-repairs

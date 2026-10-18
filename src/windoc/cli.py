@@ -223,9 +223,26 @@ def scan(
     drv_report = evaluate_driver_hypotheses(drv_results)
     render_diagnosis_report(drv_report)
 
+    console.print()
+
+    # 4. Windows Update Subsystem
+    from windoc.core.engine import evaluate_update_hypotheses
+    from windoc.domains.update import run_all_update_checks
+
+    with console.status("[bold green]Analyzing Windows Update subsystem...[/bold green]"):
+        upd_results = run_all_update_checks()
+    render_diagnostic_results("Windows Update Diagnostics", upd_results)
+    upd_report = evaluate_update_hypotheses(upd_results)
+    render_diagnosis_report(upd_report)
+
     if fix:
         _run_auto_fixes(
-            [(net_report, "Network"), (bth_report, "Bluetooth"), (drv_report, "Drivers")],
+            [
+                (net_report, "Network"),
+                (bth_report, "Bluetooth"),
+                (drv_report, "Drivers"),
+                (upd_report, "Windows Update"),
+            ],
             auto_approve=yes,
         )
 
@@ -346,8 +363,20 @@ def fix_cmd(
         drv_results = run_all_driver_checks()
     drv_report = evaluate_driver_hypotheses(drv_results)
 
+    from windoc.core.engine import evaluate_update_hypotheses
+    from windoc.domains.update import run_all_update_checks
+
+    with console.status("[bold green]Checking Windows Update health...[/bold green]"):
+        upd_results = run_all_update_checks()
+    upd_report = evaluate_update_hypotheses(upd_results)
+
     _run_auto_fixes(
-        [(net_report, "Network"), (bth_report, "Bluetooth"), (drv_report, "Drivers")],
+        [
+            (net_report, "Network"),
+            (bth_report, "Bluetooth"),
+            (drv_report, "Drivers"),
+            (upd_report, "Windows Update"),
+        ],
         auto_approve=yes,
     )
 
@@ -393,6 +422,21 @@ def diagnose_drivers() -> None:
     render_diagnostic_results("Hardware & Driver Diagnostic Report", results)
 
     report = evaluate_driver_hypotheses(results)
+    render_diagnosis_report(report)
+
+
+@diagnose_app.command(name="update")
+def diagnose_update() -> None:
+    """Diagnose Windows Update services, pending reboots, and update history."""
+    from windoc.core.engine import evaluate_update_hypotheses
+    from windoc.domains.update import run_all_update_checks
+
+    console.print("[bold cyan]Investigating Windows Update Subsystem...[/bold cyan]\n")
+    with console.status("[bold green]Executing Windows Update checks...[/bold green]"):
+        results = run_all_update_checks()
+    render_diagnostic_results("Windows Update Diagnostic Report", results)
+
+    report = evaluate_update_hypotheses(results)
     render_diagnosis_report(report)
 
 
@@ -494,7 +538,7 @@ def list_domains() -> None:
     table.add_row("network", "Supported (Active)", "Wi-Fi, Ethernet, IP config, Gateway, DNS, Connectivity")
     table.add_row("bluetooth", "Supported (Active)", "Adapter state, service, device connection")
     table.add_row("drivers", "Supported (Active)", "Device Manager error codes, missing drivers, disabled devices")
-    table.add_row("update", "Planned (Milestone 8)", "Windows Update services, error codes, logs")
+    table.add_row("update", "Supported (Active)", "Windows Update services, error codes, logs")
     table.add_row("system", "Planned (Milestone 9)", "System file integrity, component store, services")
     table.add_row("performance", "Planned (Milestone 10)", "CPU, RAM, disk utilization, resource spikes")
 

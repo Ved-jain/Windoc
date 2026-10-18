@@ -564,3 +564,123 @@ def evaluate_driver_hypotheses(evidence: List[DiagnosticResult]) -> DiagnosisRep
         summary=summary,
     )
 
+
+def evaluate_update_hypotheses(evidence: List[DiagnosticResult]) -> DiagnosisReport:
+    """Evaluate candidate root causes for Windows Update issues based on accumulated evidence."""
+    ev_map: Dict[str, DiagnosticResult] = {r.check_id: r for r in evidence}
+
+    h_healthy = {"score": 50.0, "supports": [], "refutes": []}
+    h_services_disabled = {"score": 0.0, "supports": [], "refutes": []}
+    h_reboot_required = {"score": 0.0, "supports": [], "refutes": []}
+
+    svc_disabled = ev_map.get("upd.service.disabled")
+    svc_status = ev_map.get("upd.service.status")
+    reboot_pending = ev_map.get("upd.system.reboot_pending")
+    hotfixes = ev_map.get("upd.history.hotfixes")
+    cache = ev_map.get("upd.cache.integrity")
+
+    if svc_status and svc_status.status == CheckStatus.PASS:
+        h_healthy["score"] += 30.0
+        h_healthy["supports"].append(svc_status.observation)
+        h_services_disabled["refutes"].append("All update services are configured with valid startup types")
+
+    if svc_disabled and svc_disabled.status == CheckStatus.FAIL:
+        h_services_disabled["score"] += 95.0
+        h_services_disabled["supports"].append(svc_disabled.observation)
+        h_healthy["score"] = 0.0
+        h_healthy["refutes"].append("Windows Update background service is disabled")
+
+    if reboot_pending:
+        if reboot_pending.status == CheckStatus.WARNING:
+            h_reboot_required["score"] += 90.0
+            h_reboot_required["supports"].append(reboot_pending.observation)
+            h_healthy["score"] = 0.0
+            h_healthy["refutes"].append("System reboot is pending for completed updates")
+        elif reboot_pending.status == CheckStatus.PASS:
+            h_healthy["score"] += 10.0
+            h_healthy["supports"].append(reboot_pending.observation)
+            h_reboot_required["refutes"].append("No pending restart detected in registry")
+
+    if hotfixes and hotfixes.status == CheckStatus.PASS:
+        h_healthy["score"] += 10.0
+        h_healthy["supports"].append(hotfixes.observation)
+
+    candidates = [
+        {
+            "cause_id": "UPD_ALL_HEALTHY",
+            "title": "Windows Update Subsystem Operational",
+            "description": "Windows Update background services are configured properly, no restart is pending, and update history is verified.",
+            "score": h_healthy["score"],
+            "supports": h_healthy["supports"],
+            "refutes": h_healthy["refutes"],
+            "recommended_action": "No repair needed; Windows Update is functional.",
+        },
+        {
+            "cause_id": "UPD_SERVICES_DISABLED",
+            "title": "Windows Update Services Disabled",
+            "description": "Essential update background services (wuauserv, bits, or cryptsvc) have been disabled, blocking system updates.",
+            "score": h_services_disabled["score"],
+            "supports": h_services_disabled["supports"],
+            "refutes": h_services_disabled["refutes"],
+            "recommended_action": "Re-enable and start Windows Update background services.",
+        },
+        {
+            "cause_id": "UPD_REBOOT_REQUIRED",
+            "title": "System Restart Required for Windows Update",
+            "description": "Windows has installed updates that are waiting for a computer restart before further updates or operations can proceed.",
+            "score": h_reboot_required["score"],
+            "supports": h_reboot_required["supports"],
+            "refutes": h_reboot_required["refutes"],
+            "recommended_action": "Restart your computer to complete pending updates.",
+        },
+    ]
+
+    findings: List[DiagnosisFinding] = []
+    for c in candidates:
+        raw_score = max(0.0, min(100.0, c["score"]))
+        confidence = round(raw_score / 100.0, 2)
+
+        if confidence >= 0.80:
+            status = HypothesisStatus.CONFIRMED
+        elif confidence >= 0.50:
+            status = HypothesisStatus.LIKELY
+        elif confidence >= 0.25:
+            status = HypothesisStatus.POSSIBLE
+        elif confidence <= 0.10:
+            status = HypothesisStatus.RULED_OUT
+        else:
+            status = HypothesisStatus.INCONCLUSIVE
+
+        findings.append(
+            DiagnosisFinding(
+                cause_id=c["cause_id"],
+                title=c["title"],
+                description=c["description"],
+                confidence=confidence,
+                status=status,
+                supporting_evidence=c["supports"],
+                refuting_evidence=c["refutes"],
+                recommended_action=c["recommended_action"],
+            )
+        )
+
+    findings.sort(key=lambda f: f.confidence, reverse=True)
+    primary = findings[0] if findings and findings[0].confidence >= 0.50 else None
+
+    if primary and primary.status == HypothesisStatus.CONFIRMED:
+        summary = f"Confirmed root cause: {primary.title} (Confidence: {int(primary.confidence * 100)}%)."
+    elif primary and primary.status == HypothesisStatus.LIKELY:
+        summary = f"Probable root cause: {primary.title} (Confidence: {int(primary.confidence * 100)}%)."
+    else:
+        summary = "Diagnostic evidence is inconclusive; manual investigation required."
+
+    return DiagnosisReport(
+        domain="update",
+        primary_finding=primary,
+        all_findings=findings,
+        evidence_count=len(evidence),
+        is_conclusive=primary is not None and primary.status in (HypothesisStatus.CONFIRMED, HypothesisStatus.LIKELY),
+        summary=summary,
+    )
+
+

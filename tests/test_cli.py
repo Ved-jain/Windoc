@@ -92,9 +92,17 @@ def test_cli_scan() -> None:
         status=CheckStatus.PASS,
         data_source="Get-PnpDevice",
     )
+    upd_res = DiagnosticResult(
+        check_id="upd.service.status",
+        domain="update",
+        observation="Update services operational",
+        status=CheckStatus.PASS,
+        data_source="Get-Service",
+    )
     with patch("windoc.cli.run_all_network_checks", return_value=[net_res]), \
          patch("windoc.domains.bluetooth.run_all_bluetooth_checks", return_value=[bth_res]), \
-         patch("windoc.domains.drivers.run_all_driver_checks", return_value=[drv_res]):
+         patch("windoc.domains.drivers.run_all_driver_checks", return_value=[drv_res]), \
+         patch("windoc.domains.update.run_all_update_checks", return_value=[upd_res]):
         result = runner.invoke(app, ["scan"])
         assert result.exit_code == 0
         assert "Starting comprehensive diagnostic scan" in result.stdout
@@ -103,6 +111,7 @@ def test_cli_scan() -> None:
         assert "Bluetooth Diagnostics" in result.stdout
         assert "bth.service.bthserv.state" in result.stdout
         assert "Hardware & Driver Diagnostics" in result.stdout
+        assert "Windows Update Diagnostics" in result.stdout
 
 
 def test_cli_list_repairs() -> None:
@@ -178,6 +187,26 @@ def test_cli_diagnose_drivers() -> None:
         assert result.exit_code == 0
         assert "Hardware & Driver Diagnostic Report" in result.stdout
         assert "drv.pnp.all_healthy" in result.stdout
+
+
+def test_cli_diagnose_update() -> None:
+    """Verify `windoc diagnose update` command output formatting."""
+    from unittest.mock import patch
+    from windoc.core.models import CheckStatus, DiagnosticResult
+
+    mock_result = DiagnosticResult(
+        check_id="upd.service.status",
+        domain="update",
+        observation="All Windows Update services configured properly",
+        status=CheckStatus.PASS,
+        data_source="Get-Service",
+    )
+    with patch("windoc.domains.update.run_all_update_checks", return_value=[mock_result]):
+        result = runner.invoke(app, ["diagnose", "update"])
+        assert result.exit_code == 0
+        assert "Windows Update Diagnostic Report" in result.stdout
+        assert "upd.service.status" in result.stdout
+        assert "PASS" in result.stdout
         assert "PASS" in result.stdout
 
 
@@ -220,6 +249,15 @@ def test_cli_fix_all_healthy() -> None:
         recommended_action="None",
         supporting_evidence=[],
     )
+    upd_healthy_verdict = DiagnosisFinding(
+        cause_id="UPD_ALL_HEALTHY",
+        title="Windows Update Subsystem Operational",
+        description="Healthy",
+        confidence=1.0,
+        status=HypothesisStatus.CONFIRMED,
+        recommended_action="None",
+        supporting_evidence=[],
+    )
     mock_net_report = DiagnosisReport(
         domain="network",
         summary="Healthy",
@@ -238,13 +276,21 @@ def test_cli_fix_all_healthy() -> None:
         primary_finding=drv_healthy_verdict,
         all_findings=[drv_healthy_verdict],
     )
+    mock_upd_report = DiagnosisReport(
+        domain="update",
+        summary="Healthy",
+        primary_finding=upd_healthy_verdict,
+        all_findings=[upd_healthy_verdict],
+    )
 
     with patch("windoc.cli.run_all_network_checks", return_value=[]), \
          patch("windoc.domains.bluetooth.run_all_bluetooth_checks", return_value=[]), \
          patch("windoc.domains.drivers.run_all_driver_checks", return_value=[]), \
+         patch("windoc.domains.update.run_all_update_checks", return_value=[]), \
          patch("windoc.core.engine.evaluate_network_hypotheses", return_value=mock_net_report), \
          patch("windoc.core.engine.evaluate_bluetooth_hypotheses", return_value=mock_bth_report), \
-         patch("windoc.core.engine.evaluate_driver_hypotheses", return_value=mock_drv_report):
+         patch("windoc.core.engine.evaluate_driver_hypotheses", return_value=mock_drv_report), \
+         patch("windoc.core.engine.evaluate_update_hypotheses", return_value=mock_upd_report):
         result = runner.invoke(app, ["fix"])
         assert result.exit_code == 0
         assert "All scanned subsystems are healthy" in result.stdout
@@ -283,6 +329,15 @@ def test_cli_fix_with_detected_issue_auto_approve() -> None:
         recommended_action="None",
         supporting_evidence=[],
     )
+    upd_healthy_verdict = DiagnosisFinding(
+        cause_id="UPD_ALL_HEALTHY",
+        title="Windows Update Subsystem Operational",
+        description="Healthy",
+        confidence=1.0,
+        status=HypothesisStatus.CONFIRMED,
+        recommended_action="None",
+        supporting_evidence=[],
+    )
     mock_net_report = DiagnosisReport(
         domain="network",
         summary="DNS resolution failed",
@@ -301,6 +356,12 @@ def test_cli_fix_with_detected_issue_auto_approve() -> None:
         primary_finding=drv_healthy_verdict,
         all_findings=[drv_healthy_verdict],
     )
+    mock_upd_report = DiagnosisReport(
+        domain="update",
+        summary="Healthy",
+        primary_finding=upd_healthy_verdict,
+        all_findings=[upd_healthy_verdict],
+    )
     mock_repair_result = RepairExecutionResult(
         repair_id="net.flush_dns",
         name="Flush and Reset DNS Cache",
@@ -311,9 +372,11 @@ def test_cli_fix_with_detected_issue_auto_approve() -> None:
     with patch("windoc.cli.run_all_network_checks", return_value=[]), \
          patch("windoc.domains.bluetooth.run_all_bluetooth_checks", return_value=[]), \
          patch("windoc.domains.drivers.run_all_driver_checks", return_value=[]), \
+         patch("windoc.domains.update.run_all_update_checks", return_value=[]), \
          patch("windoc.core.engine.evaluate_network_hypotheses", return_value=mock_net_report), \
          patch("windoc.core.engine.evaluate_bluetooth_hypotheses", return_value=mock_bth_report), \
          patch("windoc.core.engine.evaluate_driver_hypotheses", return_value=mock_drv_report), \
+         patch("windoc.core.engine.evaluate_update_hypotheses", return_value=mock_upd_report), \
          patch("windoc.cli.execute_repair", return_value=mock_repair_result):
         result = runner.invoke(app, ["fix", "--yes"])
         assert result.exit_code == 0

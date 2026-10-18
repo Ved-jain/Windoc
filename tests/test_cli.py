@@ -322,3 +322,14 @@ def test_cli_fix_with_detected_issue_auto_approve() -> None:
         assert "Fixed and Verified!" in result.stdout
 
 
+def test_cli_repair_omitted_id_routes_to_fix() -> None:
+    """Verify `windoc repair` or `windoc repair --yes` without ID routes to auto-fix."""
+    from unittest.mock import patch
+
+    with patch("windoc.cli.fix_cmd") as mock_fix:
+        result = runner.invoke(app, ["repair", "--yes"])
+        assert result.exit_code == 0
+        mock_fix.assert_called_once_with(yes=True)
+
+
+

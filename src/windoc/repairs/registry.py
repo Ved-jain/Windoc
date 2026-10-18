@@ -138,7 +138,7 @@ def _enable_devices_action(**kwargs) -> CommandResult:
         "Where-Object { $_.ConfigManagerErrorCode -eq 22 } | "
         "Enable-PnpDevice -Confirm:$false"
     )
-    res = run_powershell(ps_cmd, timeout_seconds=20.0)
+    res, _ = run_powershell(ps_cmd, timeout_seconds=20.0)
     return res
 
 

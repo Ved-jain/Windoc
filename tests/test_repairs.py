@@ -132,3 +132,36 @@ def test_repair_verification_failed_despite_exit_zero() -> None:
     assert result.status == RepairStatus.VERIFICATION_FAILED
     assert result.verified is False
     assert "independent verification failed" in result.message
+
+
+def test_repair_tuple_action_unwrapping() -> None:
+    """Verify that if action_fn returns a tuple (CommandResult, data), it is safely unwrapped."""
+    cmd_res = CommandResult(args=["powershell"], exit_code=0, stdout="Done")
+    tuple_repair = RepairAction(
+        repair_id="test.tuple",
+        name="Tuple Action",
+        description="Returns tuple",
+        target_cause_id="TEST_CAUSE",
+        risk_level=RiskLevel.LOW,
+        requires_admin=False,
+        expected_effects="None",
+        timeout_seconds=5.0,
+        action_fn=lambda **kw: (cmd_res, ["some_data"]),
+        verify_fn=lambda **kw: (True, "Verified", []),
+    )
+
+    result = execute_repair(tuple_repair, auto_approve=True)
+    assert result.status == RepairStatus.SUCCESS
+    assert result.verified is True
+
+
+def test_driver_enable_repair_action() -> None:
+    """Verify drv.enable_device action returns CommandResult directly without tuple error."""
+    rep = registry.get("drv.enable_device")
+    assert rep is not None
+    cmd_res = CommandResult(args=["powershell"], exit_code=0, stdout="Device Enabled")
+    with patch("windoc.repairs.registry.run_powershell", return_value=(cmd_res, [])):
+        res = rep.action_fn()
+        assert isinstance(res, CommandResult)
+        assert res.exit_code == 0
+

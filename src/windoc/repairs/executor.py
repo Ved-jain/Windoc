@@ -89,6 +89,8 @@ def execute_repair(
     # 4. Execute the allowlisted repair command
     try:
         cmd_result = repair.action_fn(**kwargs)
+        if isinstance(cmd_result, tuple):
+            cmd_result = cmd_result[0]
     except Exception as exc:
         return RepairExecutionResult(
             repair_id=repair.repair_id,

@@ -424,10 +424,17 @@ def list_repairs() -> None:
 
 @app.command(name="repair")
 def repair_cmd(
-    repair_id: str = typer.Argument(..., help="The identifier of the repair to execute (e.g. net.flush_dns)"),
+    repair_id: Optional[str] = typer.Argument(
+        None,
+        help="The identifier of the repair to execute (e.g. drv.enable_device). If omitted, automatically runs auto-fix.",
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip interactive confirmation prompt"),
 ) -> None:
-    """Execute a controlled repair procedure with pre/post verification."""
+    """Execute a controlled repair procedure with pre/post verification (or auto-fix if no ID is specified)."""
+    if not repair_id:
+        fix_cmd(yes=yes)
+        return
+
     rep = registry.get(repair_id)
     if not rep:
         console.print(f"[bold red]Error:[/bold red] Unknown repair '{repair_id}'. Run `windoc list-repairs` to see all supported repairs.")

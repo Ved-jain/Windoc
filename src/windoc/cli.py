@@ -187,15 +187,26 @@ def render_diagnosis_report(report) -> None:
 @app.command()
 def scan() -> None:
     """Run an automated diagnostic scan across all supported subsystems."""
-    from windoc.core.engine import evaluate_network_hypotheses
+    from windoc.core.engine import evaluate_bluetooth_hypotheses, evaluate_network_hypotheses
+    from windoc.domains.bluetooth import run_all_bluetooth_checks
 
     console.print("[bold cyan]Starting comprehensive diagnostic scan...[/bold cyan]\n")
-    with console.status("[bold green]Analyzing network subsystem...[/bold green]"):
-        results = run_all_network_checks()
-    render_diagnostic_results("Network Diagnostics", results)
 
-    report = evaluate_network_hypotheses(results)
-    render_diagnosis_report(report)
+    # 1. Network Subsystem
+    with console.status("[bold green]Analyzing network subsystem...[/bold green]"):
+        net_results = run_all_network_checks()
+    render_diagnostic_results("Network Diagnostics", net_results)
+    net_report = evaluate_network_hypotheses(net_results)
+    render_diagnosis_report(net_report)
+
+    console.print()
+
+    # 2. Bluetooth Subsystem
+    with console.status("[bold green]Analyzing Bluetooth subsystem...[/bold green]"):
+        bth_results = run_all_bluetooth_checks()
+    render_diagnostic_results("Bluetooth Diagnostics", bth_results)
+    bth_report = evaluate_bluetooth_hypotheses(bth_results)
+    render_diagnosis_report(bth_report)
 
 
 @diagnose_app.command(name="network")

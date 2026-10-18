@@ -67,24 +67,33 @@ def test_cli_diagnose_network() -> None:
 
 
 def test_cli_scan() -> None:
-    """Verify `windoc scan` command triggers diagnostic scans."""
+    """Verify `windoc scan` command triggers diagnostic scans across all active domains."""
     from unittest.mock import patch
     from windoc.core.models import CheckStatus, DiagnosticResult
 
-    mock_result = DiagnosticResult(
+    net_res = DiagnosticResult(
         check_id="net.dns.test",
         domain="network",
         observation="DNS test passed",
         status=CheckStatus.PASS,
         data_source="socket",
     )
-    with patch("windoc.cli.run_all_network_checks", return_value=[mock_result]):
+    bth_res = DiagnosticResult(
+        check_id="bth.service.bthserv.state",
+        domain="bluetooth",
+        observation="Service running",
+        status=CheckStatus.PASS,
+        data_source="Get-Service",
+    )
+    with patch("windoc.cli.run_all_network_checks", return_value=[net_res]), \
+         patch("windoc.domains.bluetooth.run_all_bluetooth_checks", return_value=[bth_res]):
         result = runner.invoke(app, ["scan"])
         assert result.exit_code == 0
         assert "Starting comprehensive diagnostic scan" in result.stdout
         assert "Network Diagnostics" in result.stdout
         assert "net.dns.test" in result.stdout
-        assert "PASS" in result.stdout
+        assert "Bluetooth Diagnostics" in result.stdout
+        assert "bth.service.bthserv.state" in result.stdout
 
 
 def test_cli_list_repairs() -> None:

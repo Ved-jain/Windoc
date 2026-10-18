@@ -15,6 +15,10 @@ from windoc.domains.bluetooth.checks import (
     check_bluetooth_services,
 )
 from windoc.domains.drivers.checks import check_pnp_device_errors
+from windoc.domains.system.checks import (
+    check_component_store_health,
+    check_core_system_services,
+)
 from windoc.domains.update.checks import check_update_services
 from windoc.repairs.models import RiskLevel
 
@@ -173,6 +177,42 @@ def _reset_update_services_verify(**kwargs) -> Tuple[bool, str, List[DiagnosticR
     return False, f"Failed to restore all update services: {disabled[0].observation}", results
 
 
+def _repair_component_store_action(**kwargs) -> CommandResult:
+    """Repair corrupted Windows component store using DISM RestoreHealth."""
+    cmd = ["dism.exe", "/Online", "/Cleanup-Image", "/RestoreHealth"]
+    return run_command(cmd, timeout_seconds=180.0)
+
+
+def _repair_component_store_verify(**kwargs) -> Tuple[bool, str, List[DiagnosticResult]]:
+    """Verify Windows Component Store after RestoreHealth repair."""
+    res = check_component_store_health()
+    if res.status == CheckStatus.PASS:
+        return True, "Windows Component Store successfully restored to healthy state.", [res]
+    return False, f"Component store issue persists: {res.observation}", [res]
+
+
+def _restart_system_services_action(**kwargs) -> CommandResult:
+    """Ensure essential Windows OS subsystem services are configured and running."""
+    ps_cmd = (
+        "Set-Service -Name 'RpcSs' -StartupType Automatic -ErrorAction SilentlyContinue; "
+        "Set-Service -Name 'DcomLaunch' -StartupType Automatic -ErrorAction SilentlyContinue; "
+        "Set-Service -Name 'EventLog' -StartupType Automatic -ErrorAction SilentlyContinue; "
+        "Set-Service -Name 'Winmgmt' -StartupType Automatic -ErrorAction SilentlyContinue; "
+        "Start-Service -Name 'EventLog', 'Winmgmt' -ErrorAction SilentlyContinue"
+    )
+    res, _ = run_powershell(ps_cmd, timeout_seconds=20.0)
+    return res
+
+
+def _restart_system_services_verify(**kwargs) -> Tuple[bool, str, List[DiagnosticResult]]:
+    """Verify core Windows subsystem services are running."""
+    results = check_core_system_services()
+    stopped = [r for r in results if r.check_id == "sys.service.stopped"]
+    if not stopped:
+        return True, "All core Windows subsystem services are active and running.", results
+    return False, f"Core service(s) failed to start: {stopped[0].observation}", results
+
+
 class RepairRegistry:
     """Central repository of authorized repair operations."""
 
@@ -315,6 +355,36 @@ class RepairRegistry:
                 timeout_seconds=20.0,
                 action_fn=_reset_update_services_action,
                 verify_fn=_reset_update_services_verify,
+            )
+        )
+
+        self.register(
+            RepairAction(
+                repair_id="sys.repair_component_store",
+                name="Repair Component Store (DISM RestoreHealth)",
+                description="Repairs corrupted Windows system packages using DISM RestoreHealth against Windows Update component store.",
+                target_cause_id="SYS_COMPONENT_STORE_CORRUPT",
+                risk_level=RiskLevel.MEDIUM,
+                requires_admin=True,
+                expected_effects="Replaces corrupted or missing system files in the Windows Component Store (WinSxS).",
+                timeout_seconds=180.0,
+                action_fn=_repair_component_store_action,
+                verify_fn=_repair_component_store_verify,
+            )
+        )
+
+        self.register(
+            RepairAction(
+                repair_id="sys.restart_services",
+                name="Restore Essential System Services",
+                description="Re-enables and starts essential Windows OS subsystem services including WMI and EventLog.",
+                target_cause_id="SYS_CORE_SERVICES_STOPPED",
+                risk_level=RiskLevel.LOW,
+                requires_admin=True,
+                expected_effects="Restores core Windows subsystem services to Automatic startup and active state.",
+                timeout_seconds=20.0,
+                action_fn=_restart_system_services_action,
+                verify_fn=_restart_system_services_verify,
             )
         )
 

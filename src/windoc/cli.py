@@ -235,6 +235,18 @@ def scan(
     upd_report = evaluate_update_hypotheses(upd_results)
     render_diagnosis_report(upd_report)
 
+    console.print()
+
+    # 5. Windows System Integrity & Core Services
+    from windoc.core.engine import evaluate_system_hypotheses
+    from windoc.domains.system import run_all_system_checks
+
+    with console.status("[bold green]Analyzing Windows system integrity & core services...[/bold green]"):
+        sys_results = run_all_system_checks()
+    render_diagnostic_results("Windows System Diagnostics", sys_results)
+    sys_report = evaluate_system_hypotheses(sys_results)
+    render_diagnosis_report(sys_report)
+
     if fix:
         _run_auto_fixes(
             [
@@ -242,6 +254,7 @@ def scan(
                 (bth_report, "Bluetooth"),
                 (drv_report, "Drivers"),
                 (upd_report, "Windows Update"),
+                (sys_report, "System"),
             ],
             auto_approve=yes,
         )
@@ -370,12 +383,20 @@ def fix_cmd(
         upd_results = run_all_update_checks()
     upd_report = evaluate_update_hypotheses(upd_results)
 
+    from windoc.core.engine import evaluate_system_hypotheses
+    from windoc.domains.system import run_all_system_checks
+
+    with console.status("[bold green]Checking Windows system integrity...[/bold green]"):
+        sys_results = run_all_system_checks()
+    sys_report = evaluate_system_hypotheses(sys_results)
+
     _run_auto_fixes(
         [
             (net_report, "Network"),
             (bth_report, "Bluetooth"),
             (drv_report, "Drivers"),
             (upd_report, "Windows Update"),
+            (sys_report, "System"),
         ],
         auto_approve=yes,
     )
@@ -437,6 +458,21 @@ def diagnose_update() -> None:
     render_diagnostic_results("Windows Update Diagnostic Report", results)
 
     report = evaluate_update_hypotheses(results)
+    render_diagnosis_report(report)
+
+
+@diagnose_app.command(name="system")
+def diagnose_system() -> None:
+    """Diagnose Windows component store integrity, core services, and crash dumps."""
+    from windoc.core.engine import evaluate_system_hypotheses
+    from windoc.domains.system import run_all_system_checks
+
+    console.print("[bold cyan]Investigating Windows System Integrity & Core Services...[/bold cyan]\n")
+    with console.status("[bold green]Executing system integrity checks...[/bold green]"):
+        results = run_all_system_checks()
+    render_diagnostic_results("Windows System Diagnostic Report", results)
+
+    report = evaluate_system_hypotheses(results)
     render_diagnosis_report(report)
 
 
@@ -539,7 +575,7 @@ def list_domains() -> None:
     table.add_row("bluetooth", "Supported (Active)", "Adapter state, service, device connection")
     table.add_row("drivers", "Supported (Active)", "Device Manager error codes, missing drivers, disabled devices")
     table.add_row("update", "Supported (Active)", "Windows Update services, error codes, logs")
-    table.add_row("system", "Planned (Milestone 9)", "System file integrity, component store, services")
+    table.add_row("system", "Supported (Active)", "System file integrity, component store, services")
     table.add_row("performance", "Planned (Milestone 10)", "CPU, RAM, disk utilization, resource spikes")
 
     console.print(table)

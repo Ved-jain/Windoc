@@ -87,6 +87,15 @@ Every issue WinDoc detects is assigned a transparent, deterministic **Root Cause
 | `UPD_SERVICES_DISABLED` | **Update Services Disabled** | Error "We couldn't connect to the update service", updates fail to check. | Core update services configured with StartType `Disabled` (Code 4). |
 | `UPD_REBOOT_REQUIRED` | **Restart Required for Updates** | Updates stuck at "Pending restart", new updates won't install. | Registry query confirms `RebootRequired` or CBS `RebootPending` flags are active. |
 
+### System Integrity & Core Services (`sys`)
+| Cause Code | Plain-English Meaning | Common Symptom | How WinDoc Detects It |
+| :--- | :--- | :--- | :--- |
+| `SYS_ALL_HEALTHY` | **System Files & Services Healthy** | Windows runs smoothly, no subsystem crashes. | Core OS services (RPC, DCOM, EventLog, WMI) running; WinSxS clean; no recent BSOD dumps. |
+| `SYS_CORE_SERVICES_STOPPED` | **Core System Service Inactive** | System tools crash, WMI queries fail, event viewer broken. | Essential Windows services (EventLog, WMI, RPC) are stopped or disabled. |
+| `SYS_COMPONENT_STORE_CORRUPT`| **Component Store Corrupted** | Windows features fail to install, SFC reports unfixable errors. | DISM CheckHealth or servicing registry confirms component store package corruption. |
+| `SYS_RECENT_CRASHES` | **Recent Blue Screen (BSOD)** | PC restarted unexpectedly, blue screen crash recently occurred. | Crash minidump files found in `C:\Windows\Minidump` modified within last 7 days. |
+| `SYS_SAFE_MODE_ACTIVE` | **Safe Mode Boot Detected** | Low resolution screen, audio and networking disabled. | CIM BootupState reports system booted in Safe or Diagnostic mode. |
+
 ---
 
 ## 4. Controlled Repair Procedures Reference
@@ -103,6 +112,8 @@ WinDoc only executes safe, allowlisted, non-destructive repair procedures. **Bli
 | `drv.rescan_devices` | **Rescan Hardware Devices** | `DRV_DEVICE_CRASHED_CODE_43` | `LOW` | **Yes** | Re-enumerates Plug and Play hardware tree (`pnputil /scan-devices`). **Verification:** Re-queries PnP devices to verify crashed devices recovered. |
 | `drv.enable_device` | **Re-enable Disabled Hardware** | `DRV_DEVICE_DISABLED_CODE_22` | `LOW` | **Yes** | Sends enable command to disabled PnP device. **Verification:** Queries Device Manager to confirm device returned to `OK` state. |
 | `upd.reset_services` | **Reset Update Services** | `UPD_SERVICES_DISABLED` | `LOW` | **Yes** | Re-enables and starts `wuauserv`, `bits`, and `cryptsvc`. **Verification:** Queries Service Control Manager to confirm services are enabled. |
+| `sys.repair_component_store` | **Repair Component Store (DISM)** | `SYS_COMPONENT_STORE_CORRUPT` | `MEDIUM` | **Yes** | Runs `dism.exe /Online /Cleanup-Image /RestoreHealth`. **Verification:** Confirms component store is restored to clean operational status. |
+| `sys.restart_services` | **Restore System Services** | `SYS_CORE_SERVICES_STOPPED` | `LOW` | **Yes** | Re-enables and starts essential OS services (`EventLog`, `Winmgmt`, `RpcSs`). **Verification:** Queries Service Control Manager to verify services are `Running`. |
 
 ---
 
@@ -122,6 +133,9 @@ windoc diagnose drivers
 
 # Run diagnostics only for Windows Update
 windoc diagnose update
+
+# Run diagnostics only for Windows system integrity and core services
+windoc diagnose system
 
 # List all approved repairs in the registry with safety metadata
 windoc list-repairs

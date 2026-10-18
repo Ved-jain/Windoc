@@ -684,3 +684,159 @@ def evaluate_update_hypotheses(evidence: List[DiagnosticResult]) -> DiagnosisRep
     )
 
 
+def evaluate_system_hypotheses(evidence: List[DiagnosticResult]) -> DiagnosisReport:
+    """Evaluate candidate root causes for Windows System integrity and service issues based on evidence."""
+    ev_map: Dict[str, DiagnosticResult] = {r.check_id: r for r in evidence}
+
+    h_healthy = {"score": 50.0, "supports": [], "refutes": []}
+    h_services_stopped = {"score": 0.0, "supports": [], "refutes": []}
+    h_dism_corrupt = {"score": 0.0, "supports": [], "refutes": []}
+    h_recent_crashes = {"score": 0.0, "supports": [], "refutes": []}
+    h_safe_mode = {"score": 0.0, "supports": [], "refutes": []}
+
+    svc_status = ev_map.get("sys.service.status")
+    svc_stopped = ev_map.get("sys.service.stopped")
+    dism_health = ev_map.get("sys.dism.health")
+    dism_corrupt = ev_map.get("sys.dism.corrupted")
+    crash_dumps = ev_map.get("sys.crash.dumps")
+    boot_state = ev_map.get("sys.boot.state")
+
+    if svc_status and svc_status.status == CheckStatus.PASS:
+        h_healthy["score"] += 25.0
+        h_healthy["supports"].append(svc_status.observation)
+        h_services_stopped["refutes"].append("All core system services are running")
+
+    if svc_stopped and svc_stopped.status == CheckStatus.FAIL:
+        h_services_stopped["score"] += 95.0
+        h_services_stopped["supports"].append(svc_stopped.observation)
+        h_healthy["score"] = 0.0
+        h_healthy["refutes"].append("Core Windows subsystem service is stopped or disabled")
+
+    if dism_health and dism_health.status == CheckStatus.PASS:
+        h_healthy["score"] += 15.0
+        h_healthy["supports"].append(dism_health.observation)
+        h_dism_corrupt["refutes"].append("Component store reported clean or intact")
+
+    if dism_corrupt and dism_corrupt.status == CheckStatus.FAIL:
+        h_dism_corrupt["score"] += 95.0
+        h_dism_corrupt["supports"].append(dism_corrupt.observation)
+        h_healthy["score"] = 0.0
+        h_healthy["refutes"].append("Component store corruption detected by DISM")
+
+    if crash_dumps:
+        if crash_dumps.status == CheckStatus.WARNING:
+            h_recent_crashes["score"] += 80.0
+            h_recent_crashes["supports"].append(crash_dumps.observation)
+            h_healthy["score"] = max(0.0, h_healthy["score"] - 20.0)
+        elif crash_dumps.status == CheckStatus.PASS:
+            h_healthy["score"] += 10.0
+            h_healthy["supports"].append(crash_dumps.observation)
+            h_recent_crashes["refutes"].append("No recent crash dumps found")
+
+    if boot_state:
+        if boot_state.status == CheckStatus.WARNING:
+            h_safe_mode["score"] += 90.0
+            h_safe_mode["supports"].append(boot_state.observation)
+            h_healthy["score"] = 0.0
+        elif boot_state.status == CheckStatus.PASS:
+            h_healthy["supports"].append(boot_state.observation)
+            h_safe_mode["refutes"].append("Windows booted in normal operating mode")
+
+    candidates = [
+        {
+            "cause_id": "SYS_ALL_HEALTHY",
+            "title": "Windows System Integrity Operational",
+            "description": "Core operating system services are running, component store is intact, and no recent crash events detected.",
+            "score": h_healthy["score"],
+            "supports": h_healthy["supports"],
+            "refutes": h_healthy["refutes"],
+            "recommended_action": "No repair needed; system files and core subsystems are operational.",
+        },
+        {
+            "cause_id": "SYS_CORE_SERVICES_STOPPED",
+            "title": "Critical Windows Subsystem Services Inactive",
+            "description": "Essential OS services (such as RPC, DCOM, EventLog, or WMI) are stopped or disabled.",
+            "score": h_services_stopped["score"],
+            "supports": h_services_stopped["supports"],
+            "refutes": h_services_stopped["refutes"],
+            "recommended_action": "Restart essential Windows subsystem services.",
+        },
+        {
+            "cause_id": "SYS_COMPONENT_STORE_CORRUPT",
+            "title": "Windows Component Store Corruption Detected",
+            "description": "System file servicing store reports package corruption that requires DISM RestoreHealth.",
+            "score": h_dism_corrupt["score"],
+            "supports": h_dism_corrupt["supports"],
+            "refutes": h_dism_corrupt["refutes"],
+            "recommended_action": "Run Windows DISM RestoreHealth repair procedure.",
+        },
+        {
+            "cause_id": "SYS_RECENT_CRASHES",
+            "title": "Recent System Crash / Blue Screen Detected",
+            "description": "Windows has recorded crash dump files from blue screen (BSOD) stop errors within the past 7 days.",
+            "score": h_recent_crashes["score"],
+            "supports": h_recent_crashes["supports"],
+            "refutes": h_recent_crashes["refutes"],
+            "recommended_action": "Inspect crash dump minidumps and update faulty third-party drivers.",
+        },
+        {
+            "cause_id": "SYS_SAFE_MODE_ACTIVE",
+            "title": "Windows Running in Safe Mode",
+            "description": "The operating system is booted in a diagnostic safe mode environment with minimal drivers loaded.",
+            "score": h_safe_mode["score"],
+            "supports": h_safe_mode["supports"],
+            "refutes": h_safe_mode["refutes"],
+            "recommended_action": "Restart computer normally to exit Safe Mode.",
+        },
+    ]
+
+    findings: List[DiagnosisFinding] = []
+    for c in candidates:
+        raw_score = max(0.0, min(100.0, c["score"]))
+        confidence = round(raw_score / 100.0, 2)
+
+        if confidence >= 0.80:
+            status = HypothesisStatus.CONFIRMED
+        elif confidence >= 0.50:
+            status = HypothesisStatus.LIKELY
+        elif confidence >= 0.25:
+            status = HypothesisStatus.POSSIBLE
+        elif confidence <= 0.10:
+            status = HypothesisStatus.RULED_OUT
+        else:
+            status = HypothesisStatus.INCONCLUSIVE
+
+        findings.append(
+            DiagnosisFinding(
+                cause_id=c["cause_id"],
+                title=c["title"],
+                description=c["description"],
+                confidence=confidence,
+                status=status,
+                supporting_evidence=c["supports"],
+                refuting_evidence=c["refutes"],
+                recommended_action=c["recommended_action"],
+            )
+        )
+
+    findings.sort(key=lambda f: f.confidence, reverse=True)
+    primary = findings[0] if findings and findings[0].confidence >= 0.50 else None
+
+    if primary and primary.status == HypothesisStatus.CONFIRMED:
+        summary = f"Confirmed root cause: {primary.title} (Confidence: {int(primary.confidence * 100)}%)."
+    elif primary and primary.status == HypothesisStatus.LIKELY:
+        summary = f"Probable root cause: {primary.title} (Confidence: {int(primary.confidence * 100)}%)."
+    else:
+        summary = "Diagnostic evidence is inconclusive; manual investigation required."
+
+    return DiagnosisReport(
+        domain="system",
+        primary_finding=primary,
+        all_findings=findings,
+        evidence_count=len(evidence),
+        is_conclusive=primary is not None and primary.status in (HypothesisStatus.CONFIRMED, HypothesisStatus.LIKELY),
+        summary=summary,
+    )
+
+
+

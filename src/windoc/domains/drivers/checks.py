@@ -28,7 +28,7 @@ def check_pnp_device_errors() -> List[DiagnosticResult]:
                 status=CheckStatus.ERROR,
                 severity=Severity.HIGH,
                 data_source="Get-PnpDevice",
-                metadata={"exit_code": cmd_res.exit_code},
+                measured_value={"exit_code": cmd_res.exit_code},
             )
         ]
 
@@ -42,7 +42,7 @@ def check_pnp_device_errors() -> List[DiagnosticResult]:
                 status=CheckStatus.PASS,
                 severity=Severity.INFO,
                 data_source="Get-PnpDevice",
-                metadata={"error_device_count": 0},
+                measured_value={"error_device_count": 0},
             )
         ]
 
@@ -61,9 +61,9 @@ def check_pnp_device_errors() -> List[DiagnosticResult]:
                     observation=f"Device '{name}' ({dev_class}) is missing installed drivers (Code 28).",
                     status=CheckStatus.FAIL,
                     severity=Severity.HIGH,
-                    kind=ResultKind.OBSERVATION,
+                    result_kind=ResultKind.OBSERVATION,
                     data_source="Get-PnpDevice",
-                    metadata={"instance_id": instance_id, "error_code": 28, "class": dev_class},
+                    measured_value={"instance_id": instance_id, "error_code": 28, "class": dev_class},
                 )
             )
         elif error_code == 43:
@@ -74,9 +74,9 @@ def check_pnp_device_errors() -> List[DiagnosticResult]:
                     observation=f"Device '{name}' was stopped by Windows because it reported a problem (Code 43).",
                     status=CheckStatus.FAIL,
                     severity=Severity.HIGH,
-                    kind=ResultKind.OBSERVATION,
+                    result_kind=ResultKind.OBSERVATION,
                     data_source="Get-PnpDevice",
-                    metadata={"instance_id": instance_id, "error_code": 43, "class": dev_class},
+                    measured_value={"instance_id": instance_id, "error_code": 43, "class": dev_class},
                 )
             )
         elif error_code == 22:
@@ -87,9 +87,9 @@ def check_pnp_device_errors() -> List[DiagnosticResult]:
                     observation=f"Device '{name}' is currently disabled in Windows (Code 22).",
                     status=CheckStatus.WARNING,
                     severity=Severity.MEDIUM,
-                    kind=ResultKind.OBSERVATION,
+                    result_kind=ResultKind.OBSERVATION,
                     data_source="Get-PnpDevice",
-                    metadata={"instance_id": instance_id, "error_code": 22, "class": dev_class},
+                    measured_value={"instance_id": instance_id, "error_code": 22, "class": dev_class},
                 )
             )
         elif error_code == 14:
@@ -100,9 +100,9 @@ def check_pnp_device_errors() -> List[DiagnosticResult]:
                     observation=f"Device '{name}' requires a computer restart to complete driver initialization (Code 14).",
                     status=CheckStatus.WARNING,
                     severity=Severity.MEDIUM,
-                    kind=ResultKind.OBSERVATION,
+                    result_kind=ResultKind.OBSERVATION,
                     data_source="Get-PnpDevice",
-                    metadata={"instance_id": instance_id, "error_code": 14, "class": dev_class},
+                    measured_value={"instance_id": instance_id, "error_code": 14, "class": dev_class},
                 )
             )
         elif error_code == 10:
@@ -113,9 +113,9 @@ def check_pnp_device_errors() -> List[DiagnosticResult]:
                     observation=f"Device '{name}' cannot start (Code 10).",
                     status=CheckStatus.FAIL,
                     severity=Severity.HIGH,
-                    kind=ResultKind.OBSERVATION,
+                    result_kind=ResultKind.OBSERVATION,
                     data_source="Get-PnpDevice",
-                    metadata={"instance_id": instance_id, "error_code": 10, "class": dev_class},
+                    measured_value={"instance_id": instance_id, "error_code": 10, "class": dev_class},
                 )
             )
         else:
@@ -126,9 +126,9 @@ def check_pnp_device_errors() -> List[DiagnosticResult]:
                     observation=f"Device '{name}' is in error state (Code {error_code}).",
                     status=CheckStatus.WARNING,
                     severity=Severity.MEDIUM,
-                    kind=ResultKind.OBSERVATION,
+                    result_kind=ResultKind.OBSERVATION,
                     data_source="Get-PnpDevice",
-                    metadata={"instance_id": instance_id, "error_code": error_code, "class": dev_class},
+                    measured_value={"instance_id": instance_id, "error_code": error_code, "class": dev_class},
                 )
             )
 
@@ -176,7 +176,7 @@ def check_display_adapters() -> DiagnosticResult:
             status=CheckStatus.PASS,
             severity=Severity.INFO,
             data_source="Get-PnpDevice -Class Display",
-            metadata={"gpus": gpus},
+            measured_value={"gpus": gpus},
         )
 
     return DiagnosticResult(
@@ -240,7 +240,7 @@ def check_usb_controllers() -> DiagnosticResult:
         status=CheckStatus.WARNING,
         severity=Severity.MEDIUM,
         data_source="Get-PnpDevice -Class USB",
-        metadata={"faulty_controllers": controllers_with_error},
+        measured_value={"faulty_controllers": controllers_with_error},
     )
 
 

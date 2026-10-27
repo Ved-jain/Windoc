@@ -50,9 +50,9 @@ def check_update_services() -> List[DiagnosticResult]:
                 observation=f"Windows Update service(s) disabled: {', '.join(disabled_services)}.",
                 status=CheckStatus.FAIL,
                 severity=Severity.HIGH,
-                kind=ResultKind.OBSERVATION,
+                result_kind=ResultKind.OBSERVATION,
                 data_source="Get-Service",
-                metadata={"disabled_services": disabled_services},
+                measured_value={"disabled_services": disabled_services},
             )
         )
     else:
@@ -106,9 +106,9 @@ def check_reboot_pending() -> DiagnosticResult:
             observation=f"System restart required to finish installing updates ({', '.join(reasons)}).",
             status=CheckStatus.WARNING,
             severity=Severity.MEDIUM,
-            kind=ResultKind.OBSERVATION,
+            result_kind=ResultKind.OBSERVATION,
             data_source="Registry: WindowsUpdate",
-            metadata={"wu_pending": wu_pending, "cbs_pending": cbs_pending},
+            measured_value={"wu_pending": wu_pending, "cbs_pending": cbs_pending},
         )
 
     return DiagnosticResult(
@@ -161,7 +161,7 @@ def check_recent_hotfixes() -> DiagnosticResult:
         status=CheckStatus.PASS,
         severity=Severity.INFO,
         data_source="Get-HotFix",
-        metadata={"latest_kb": latest_kb, "recent_hotfixes": hotfixes},
+        measured_value={"latest_kb": latest_kb, "recent_hotfixes": hotfixes},
     )
 
 

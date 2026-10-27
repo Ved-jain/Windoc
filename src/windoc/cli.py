@@ -274,13 +274,28 @@ def scan(
 
 
 def _run_auto_fixes(reports, auto_approve: bool = False) -> None:
-    """Helper to offer and execute verified fixes for diagnosed issues."""
+    """Helper to offer and execute verified fixes for diagnosed issues across domains."""
+    from windoc.core.engine import HypothesisStatus
+
     issues_to_fix = []
+    seen_repair_ids = set()
+
     for report, domain_name in reports:
-        if report.primary_finding and not report.primary_finding.cause_id.endswith("_ALL_HEALTHY"):
-            repairs = registry.find_for_cause(report.primary_finding.cause_id)
-            if repairs:
-                issues_to_fix.append((report.primary_finding, repairs[0], domain_name))
+        # Collect candidate findings, prioritizing primary_finding
+        findings_to_check = []
+        if report.primary_finding:
+            findings_to_check.append(report.primary_finding)
+        for f in getattr(report, "all_findings", []):
+            if f not in findings_to_check and getattr(f, "status", None) in (HypothesisStatus.CONFIRMED, HypothesisStatus.LIKELY):
+                findings_to_check.append(f)
+
+        for finding in findings_to_check:
+            if not finding.cause_id.endswith("_ALL_HEALTHY"):
+                repairs = registry.find_for_cause(finding.cause_id)
+                for rep in repairs:
+                    if rep.repair_id not in seen_repair_ids:
+                        seen_repair_ids.add(rep.repair_id)
+                        issues_to_fix.append((finding, rep, domain_name))
 
     if not issues_to_fix:
         console.print(
@@ -333,7 +348,7 @@ def _run_auto_fixes(reports, auto_approve: bool = False) -> None:
                     f"[bold yellow][!] Administrator Privileges Required[/bold yellow]\n\n"
                     f"{result.message}\n\n"
                     f"[white]To apply this fix, open PowerShell or Command Prompt as Administrator and re-run:[/white]\n"
-                    f"[bold cyan]windoc fix[/bold cyan]",
+                    f"[bold cyan]windoc fix {domain_name.lower()}[/bold cyan]",
                     title="[bold yellow]Permission Needed[/bold yellow]",
                     border_style="yellow",
                 )
@@ -360,156 +375,206 @@ def _run_auto_fixes(reports, auto_approve: bool = False) -> None:
 
 @app.command(name="fix")
 def fix_cmd(
+    domain: Optional[str] = typer.Argument(
+        None,
+        help="Optional subsystem domain to fix (network, bluetooth, drivers, update, system, performance). If omitted, scans and fixes all domains.",
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt and automatically apply fixes"),
 ) -> None:
     """Zero-hassle one-click repair: scans your PC, finds problems, and applies verified fixes."""
-    from windoc.core.engine import evaluate_bluetooth_hypotheses, evaluate_network_hypotheses
-    from windoc.domains.bluetooth import run_all_bluetooth_checks
+    domain_map = {
+        "network": "network",
+        "net": "network",
+        "bluetooth": "bluetooth",
+        "bth": "bluetooth",
+        "drivers": "drivers",
+        "driver": "drivers",
+        "drv": "drivers",
+        "update": "update",
+        "upd": "update",
+        "system": "system",
+        "sys": "system",
+        "performance": "performance",
+        "perf": "performance",
+    }
+
+    target_domain = domain_map.get(domain.lower()) if domain else None
+    if domain and not target_domain:
+        console.print(
+            f"[bold red]Error:[/bold red] Unknown domain '{domain}'. "
+            f"Supported domains: network, bluetooth, drivers, update, system, performance."
+        )
+        raise typer.Exit(code=1)
 
     console.print(
         Panel(
-            "[bold cyan]WinDoc Auto-Fix[/bold cyan]\n"
-            "Scanning system to detect any issues and automatically apply verified fixes...",
+            f"[bold cyan]WinDoc Auto-Fix{' (' + target_domain.capitalize() + ')' if target_domain else ''}[/bold cyan]\n"
+            f"Scanning {'subsystem' if target_domain else 'system'} to detect any issues and automatically apply verified fixes...",
             border_style="cyan",
         )
     )
 
-    with console.status("[bold green]Checking network health...[/bold green]"):
-        net_results = run_all_network_checks()
-    net_report = evaluate_network_hypotheses(net_results)
+    reports_to_check = []
 
-    with console.status("[bold green]Checking Bluetooth health...[/bold green]"):
-        bth_results = run_all_bluetooth_checks()
-    bth_report = evaluate_bluetooth_hypotheses(bth_results)
+    if target_domain in (None, "network"):
+        from windoc.core.engine import evaluate_network_hypotheses
+        with console.status("[bold green]Checking network health...[/bold green]"):
+            net_results = run_all_network_checks()
+        net_report = evaluate_network_hypotheses(net_results)
+        reports_to_check.append((net_report, "Network"))
 
-    from windoc.core.engine import evaluate_driver_hypotheses
-    from windoc.domains.drivers import run_all_driver_checks
+    if target_domain in (None, "bluetooth"):
+        from windoc.core.engine import evaluate_bluetooth_hypotheses
+        from windoc.domains.bluetooth import run_all_bluetooth_checks
+        with console.status("[bold green]Checking Bluetooth health...[/bold green]"):
+            bth_results = run_all_bluetooth_checks()
+        bth_report = evaluate_bluetooth_hypotheses(bth_results)
+        reports_to_check.append((bth_report, "Bluetooth"))
 
-    with console.status("[bold green]Checking hardware devices & drivers...[/bold green]"):
-        drv_results = run_all_driver_checks()
-    drv_report = evaluate_driver_hypotheses(drv_results)
+    if target_domain in (None, "drivers"):
+        from windoc.core.engine import evaluate_driver_hypotheses
+        from windoc.domains.drivers import run_all_driver_checks
+        with console.status("[bold green]Checking hardware devices & drivers...[/bold green]"):
+            drv_results = run_all_driver_checks()
+        drv_report = evaluate_driver_hypotheses(drv_results)
+        reports_to_check.append((drv_report, "Drivers"))
 
-    from windoc.core.engine import evaluate_update_hypotheses
-    from windoc.domains.update import run_all_update_checks
+    if target_domain in (None, "update"):
+        from windoc.core.engine import evaluate_update_hypotheses
+        from windoc.domains.update import run_all_update_checks
+        with console.status("[bold green]Checking Windows Update health...[/bold green]"):
+            upd_results = run_all_update_checks()
+        upd_report = evaluate_update_hypotheses(upd_results)
+        reports_to_check.append((upd_report, "Windows Update"))
 
-    with console.status("[bold green]Checking Windows Update health...[/bold green]"):
-        upd_results = run_all_update_checks()
-    upd_report = evaluate_update_hypotheses(upd_results)
+    if target_domain in (None, "system"):
+        from windoc.core.engine import evaluate_system_hypotheses
+        from windoc.domains.system import run_all_system_checks
+        with console.status("[bold green]Checking Windows system integrity...[/bold green]"):
+            sys_results = run_all_system_checks()
+        sys_report = evaluate_system_hypotheses(sys_results)
+        reports_to_check.append((sys_report, "System"))
 
-    from windoc.core.engine import evaluate_system_hypotheses
-    from windoc.domains.system import run_all_system_checks
+    if target_domain in (None, "performance"):
+        from windoc.core.engine import evaluate_performance_hypotheses
+        from windoc.domains.performance import run_all_performance_checks
+        with console.status("[bold green]Checking performance and storage capacity...[/bold green]"):
+            perf_results = run_all_performance_checks()
+        perf_report = evaluate_performance_hypotheses(perf_results)
+        reports_to_check.append((perf_report, "Performance"))
 
-    with console.status("[bold green]Checking Windows system integrity...[/bold green]"):
-        sys_results = run_all_system_checks()
-    sys_report = evaluate_system_hypotheses(sys_results)
+    _run_auto_fixes(reports_to_check, auto_approve=yes)
 
-    from windoc.core.engine import evaluate_performance_hypotheses
-    from windoc.domains.performance import run_all_performance_checks
 
-    with console.status("[bold green]Checking performance and storage capacity...[/bold green]"):
-        perf_results = run_all_performance_checks()
-    perf_report = evaluate_performance_hypotheses(perf_results)
+def _handle_diagnose_domain(
+    domain_key: str,
+    domain_name: str,
+    report_title: str,
+    investigate_title: str,
+    run_checks_fn,
+    eval_fn,
+    fix: bool = False,
+    yes: bool = False,
+) -> None:
+    """Helper to diagnose a domain and optionally apply verified fixes with ease."""
+    console.print(f"[bold cyan]Investigating {investigate_title}...[/bold cyan]\n")
+    with console.status(f"[bold green]Executing {domain_name.lower()} checks...[/bold green]"):
+        results = run_checks_fn()
+    render_diagnostic_results(report_title, results)
 
-    _run_auto_fixes(
-        [
-            (net_report, "Network"),
-            (bth_report, "Bluetooth"),
-            (drv_report, "Drivers"),
-            (upd_report, "Windows Update"),
-            (sys_report, "System"),
-            (perf_report, "Performance"),
-        ],
-        auto_approve=yes,
-    )
+    report = eval_fn(results)
+    render_diagnosis_report(report)
+
+    if fix:
+        _run_auto_fixes([(report, domain_name)], auto_approve=yes)
+    elif report.primary_finding and not report.primary_finding.cause_id.endswith("_ALL_HEALTHY"):
+        repairs = registry.find_for_cause(report.primary_finding.cause_id)
+        if repairs:
+            is_tty = False
+            try:
+                is_tty = sys.stdin.isatty()
+            except Exception:
+                pass
+            if is_tty:
+                apply_now = typer.confirm(
+                    f"\nWould you like WinDoc to fix '{report.primary_finding.title}' now?",
+                    default=True,
+                )
+                if apply_now:
+                    _run_auto_fixes([(report, domain_name)], auto_approve=True)
+                else:
+                    console.print(f"[dim]To apply later, run: [cyan]windoc fix {domain_key}[/cyan] or [cyan]windoc repair {repairs[0].repair_id}[/cyan][/dim]\n")
 
 
 @diagnose_app.command(name="network")
-def diagnose_network() -> None:
+def diagnose_network(
+    fix: bool = typer.Option(False, "--fix", "-f", help="Automatically offer to apply verified fixes for detected problems"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve fixes without confirmation prompts (when using --fix)"),
+) -> None:
     """Diagnose network adapters, IP configuration, gateway, DNS, and external reachability."""
     from windoc.core.engine import evaluate_network_hypotheses
 
-    console.print("[bold cyan]Investigating Network subsystem...[/bold cyan]\n")
-    with console.status("[bold green]Executing network checks...[/bold green]"):
-        results = run_all_network_checks()
-    render_diagnostic_results("Network Diagnostic Report", results)
-
-    report = evaluate_network_hypotheses(results)
-    render_diagnosis_report(report)
+    _handle_diagnose_domain("network", "Network", "Network Diagnostic Report", "Network subsystem", run_all_network_checks, evaluate_network_hypotheses, fix=fix, yes=yes)
 
 
 @diagnose_app.command(name="bluetooth")
-def diagnose_bluetooth() -> None:
+def diagnose_bluetooth(
+    fix: bool = typer.Option(False, "--fix", "-f", help="Automatically offer to apply verified fixes for detected problems"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve fixes without confirmation prompts (when using --fix)"),
+) -> None:
     """Diagnose Bluetooth controller hardware, services, and paired accessories."""
     from windoc.core.engine import evaluate_bluetooth_hypotheses
     from windoc.domains.bluetooth import run_all_bluetooth_checks
 
-    console.print("[bold cyan]Investigating Bluetooth subsystem...[/bold cyan]\n")
-    with console.status("[bold green]Executing Bluetooth checks...[/bold green]"):
-        results = run_all_bluetooth_checks()
-    render_diagnostic_results("Bluetooth Diagnostic Report", results)
-
-    report = evaluate_bluetooth_hypotheses(results)
-    render_diagnosis_report(report)
+    _handle_diagnose_domain("bluetooth", "Bluetooth", "Bluetooth Diagnostic Report", "Bluetooth subsystem", run_all_bluetooth_checks, evaluate_bluetooth_hypotheses, fix=fix, yes=yes)
 
 
 @diagnose_app.command(name="drivers")
-def diagnose_drivers() -> None:
+def diagnose_drivers(
+    fix: bool = typer.Option(False, "--fix", "-f", help="Automatically offer to apply verified fixes for detected problems"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve fixes without confirmation prompts (when using --fix)"),
+) -> None:
     """Diagnose hardware devices, Device Manager error codes, and drivers."""
     from windoc.core.engine import evaluate_driver_hypotheses
     from windoc.domains.drivers import run_all_driver_checks
 
-    console.print("[bold cyan]Investigating Hardware Devices & Drivers...[/bold cyan]\n")
-    with console.status("[bold green]Executing driver checks...[/bold green]"):
-        results = run_all_driver_checks()
-    render_diagnostic_results("Hardware & Driver Diagnostic Report", results)
-
-    report = evaluate_driver_hypotheses(results)
-    render_diagnosis_report(report)
+    _handle_diagnose_domain("drivers", "Drivers", "Hardware & Driver Diagnostic Report", "Hardware Devices & Drivers", run_all_driver_checks, evaluate_driver_hypotheses, fix=fix, yes=yes)
 
 
 @diagnose_app.command(name="update")
-def diagnose_update() -> None:
+def diagnose_update(
+    fix: bool = typer.Option(False, "--fix", "-f", help="Automatically offer to apply verified fixes for detected problems"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve fixes without confirmation prompts (when using --fix)"),
+) -> None:
     """Diagnose Windows Update services, pending reboots, and update history."""
     from windoc.core.engine import evaluate_update_hypotheses
     from windoc.domains.update import run_all_update_checks
 
-    console.print("[bold cyan]Investigating Windows Update Subsystem...[/bold cyan]\n")
-    with console.status("[bold green]Executing Windows Update checks...[/bold green]"):
-        results = run_all_update_checks()
-    render_diagnostic_results("Windows Update Diagnostic Report", results)
-
-    report = evaluate_update_hypotheses(results)
-    render_diagnosis_report(report)
+    _handle_diagnose_domain("update", "Windows Update", "Windows Update Diagnostic Report", "Windows Update Subsystem", run_all_update_checks, evaluate_update_hypotheses, fix=fix, yes=yes)
 
 
 @diagnose_app.command(name="system")
-def diagnose_system() -> None:
+def diagnose_system(
+    fix: bool = typer.Option(False, "--fix", "-f", help="Automatically offer to apply verified fixes for detected problems"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve fixes without confirmation prompts (when using --fix)"),
+) -> None:
     """Diagnose Windows component store integrity, core services, and crash dumps."""
     from windoc.core.engine import evaluate_system_hypotheses
     from windoc.domains.system import run_all_system_checks
 
-    console.print("[bold cyan]Investigating Windows System Integrity & Core Services...[/bold cyan]\n")
-    with console.status("[bold green]Executing system integrity checks...[/bold green]"):
-        results = run_all_system_checks()
-    render_diagnostic_results("Windows System Diagnostic Report", results)
-
-    report = evaluate_system_hypotheses(results)
-    render_diagnosis_report(report)
+    _handle_diagnose_domain("system", "System", "Windows System Diagnostic Report", "Windows System Integrity & Core Services", run_all_system_checks, evaluate_system_hypotheses, fix=fix, yes=yes)
 
 
 @diagnose_app.command(name="performance")
-def diagnose_performance() -> None:
+def diagnose_performance(
+    fix: bool = typer.Option(False, "--fix", "-f", help="Automatically offer to apply verified fixes for detected problems"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve fixes without confirmation prompts (when using --fix)"),
+) -> None:
     """Diagnose CPU load, physical RAM pressure, disk space, and system uptime."""
     from windoc.core.engine import evaluate_performance_hypotheses
     from windoc.domains.performance import run_all_performance_checks
 
-    console.print("[bold cyan]Investigating System Performance & Resource Capacity...[/bold cyan]\n")
-    with console.status("[bold green]Executing performance benchmarks & checks...[/bold green]"):
-        results = run_all_performance_checks()
-    render_diagnostic_results("Performance & Resource Diagnostic Report", results)
-
-    report = evaluate_performance_hypotheses(results)
-    render_diagnosis_report(report)
+    _handle_diagnose_domain("performance", "Performance", "Performance & Resource Diagnostic Report", "System Performance & Resource Capacity", run_all_performance_checks, evaluate_performance_hypotheses, fix=fix, yes=yes)
 
 
 @app.command(name="list-repairs")

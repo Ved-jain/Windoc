@@ -54,9 +54,9 @@ def check_core_system_services() -> List[DiagnosticResult]:
                 observation=f"Core Windows service(s) stopped or disabled: {', '.join(inactive_services)}.",
                 status=CheckStatus.FAIL,
                 severity=Severity.CRITICAL,
-                kind=ResultKind.OBSERVATION,
+                result_kind=ResultKind.OBSERVATION,
                 data_source="Get-Service",
-                metadata={"inactive_services": inactive_services},
+                measured_value={"inactive_services": inactive_services},
             )
         )
     else:
@@ -98,7 +98,7 @@ def check_component_store_health() -> DiagnosticResult:
                 observation="Windows Component Store corruption detected; image is repairable via DISM RestoreHealth.",
                 status=CheckStatus.FAIL,
                 severity=Severity.HIGH,
-                kind=ResultKind.OBSERVATION,
+                result_kind=ResultKind.OBSERVATION,
                 data_source="DISM: CheckHealth",
             )
 
@@ -158,9 +158,9 @@ def check_crash_dumps() -> DiagnosticResult:
             observation=f"Detected {count} recent system crash minidump(s) within the last 7 days.",
             status=CheckStatus.WARNING,
             severity=Severity.MEDIUM,
-            kind=ResultKind.OBSERVATION,
+            result_kind=ResultKind.OBSERVATION,
             data_source="C:\\Windows\\Minidump",
-            metadata={"crash_count": count},
+            measured_value={"crash_count": count},
         )
 
     return DiagnosticResult(
@@ -196,7 +196,7 @@ def check_os_boot_state() -> DiagnosticResult:
             observation=f"Windows is running in Safe/Diagnostic mode ({state_str}).",
             status=CheckStatus.WARNING,
             severity=Severity.MEDIUM,
-            kind=ResultKind.OBSERVATION,
+            result_kind=ResultKind.OBSERVATION,
             data_source="Win32_ComputerSystem",
         )
 

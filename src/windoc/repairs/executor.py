@@ -88,7 +88,13 @@ def execute_repair(
 
     # 4. Execute the allowlisted repair command
     try:
-        cmd_result = repair.action_fn(**kwargs)
+        action_kwargs = dict(kwargs)
+        if "timeout_seconds" not in action_kwargs and repair.timeout_seconds:
+            action_kwargs["timeout_seconds"] = repair.timeout_seconds
+        try:
+            cmd_result = repair.action_fn(**action_kwargs)
+        except TypeError:
+            cmd_result = repair.action_fn(**kwargs)
         if isinstance(cmd_result, tuple):
             cmd_result = cmd_result[0]
     except Exception as exc:
@@ -112,7 +118,10 @@ def execute_repair(
 
     # 5. Post-repair independent verification
     try:
-        verified, verif_msg, verif_results = repair.verify_fn(**kwargs)
+        verify_kwargs = dict(kwargs)
+        verify_kwargs["pre_state"] = pre_state
+        verify_kwargs["command_result"] = cmd_result
+        verified, verif_msg, verif_results = repair.verify_fn(**verify_kwargs)
     except Exception as exc:
         return RepairExecutionResult(
             repair_id=repair.repair_id,

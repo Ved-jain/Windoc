@@ -520,4 +520,81 @@ def test_cli_repair_omitted_id_routes_to_fix() -> None:
         mock_fix.assert_called_once_with(yes=True)
 
 
+def test_cli_fix_specific_domain() -> None:
+    """Verify `windoc fix network` only evaluates the network domain."""
+    from unittest.mock import patch
+    from windoc.core.engine import DiagnosisFinding, DiagnosisReport, HypothesisStatus
+
+    healthy_verdict = DiagnosisFinding(
+        cause_id="NET_ALL_HEALTHY",
+        title="Network Operational",
+        description="Healthy",
+        confidence=1.0,
+        status=HypothesisStatus.CONFIRMED,
+        recommended_action="None",
+        supporting_evidence=[],
+    )
+    mock_net_report = DiagnosisReport(
+        domain="network",
+        summary="Healthy",
+        primary_finding=healthy_verdict,
+        all_findings=[healthy_verdict],
+    )
+
+    with patch("windoc.cli.run_all_network_checks", return_value=[]) as mock_net, \
+         patch("windoc.domains.bluetooth.run_all_bluetooth_checks") as mock_bth, \
+         patch("windoc.core.engine.evaluate_network_hypotheses", return_value=mock_net_report):
+        result = runner.invoke(app, ["fix", "network"])
+        assert result.exit_code == 0
+        assert mock_net.called
+        assert not mock_bth.called
+        assert "All scanned subsystems are healthy" in result.stdout
+
+
+def test_cli_fix_invalid_domain() -> None:
+    """Verify `windoc fix invalid` produces a friendly error."""
+    result = runner.invoke(app, ["fix", "invalid_domain"])
+    assert result.exit_code == 1
+    assert "Unknown domain 'invalid_domain'" in result.stdout
+
+
+def test_cli_diagnose_domain_with_fix_flag() -> None:
+    """Verify `windoc diagnose network --fix --yes` triggers automated repair."""
+    from unittest.mock import patch
+    from windoc.core.engine import DiagnosisFinding, DiagnosisReport, HypothesisStatus
+    from windoc.repairs.models import RepairExecutionResult, RepairStatus
+
+    failing_verdict = DiagnosisFinding(
+        cause_id="NET_DNS_RESOLUTION_FAILED",
+        title="DNS Resolution Failure",
+        description="DNS failed",
+        confidence=0.9,
+        status=HypothesisStatus.CONFIRMED,
+        recommended_action="Flush DNS",
+        supporting_evidence=["socket failed"],
+    )
+    mock_net_report = DiagnosisReport(
+        domain="network",
+        summary="DNS resolution failed",
+        primary_finding=failing_verdict,
+        all_findings=[failing_verdict],
+    )
+    mock_repair_result = RepairExecutionResult(
+        repair_id="net.flush_dns",
+        name="Flush and Reset DNS Cache",
+        status=RepairStatus.SUCCESS,
+        message="DNS resolution verified successfully.",
+    )
+
+    with patch("windoc.cli.run_all_network_checks", return_value=[]), \
+         patch("windoc.core.engine.evaluate_network_hypotheses", return_value=mock_net_report), \
+         patch("windoc.cli.execute_repair", return_value=mock_repair_result):
+        result = runner.invoke(app, ["diagnose", "network", "--fix", "--yes"])
+        assert result.exit_code == 0
+        assert "Problem Detected:" in result.stdout
+        assert "DNS Resolution Failure" in result.stdout
+        assert "Fixed and Verified!" in result.stdout
+
+
+
 

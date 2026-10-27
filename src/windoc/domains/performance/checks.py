@@ -33,9 +33,9 @@ def check_cpu_utilization() -> DiagnosticResult:
             observation=f"High CPU utilization detected: {int(cpu_load)}% sustained load.",
             status=CheckStatus.WARNING,
             severity=Severity.HIGH,
-            kind=ResultKind.OBSERVATION,
+            result_kind=ResultKind.OBSERVATION,
             data_source="Win32_Processor",
-            metadata={"cpu_percentage": cpu_load},
+            measured_value={"cpu_percentage": cpu_load},
         )
 
     return DiagnosticResult(
@@ -45,7 +45,7 @@ def check_cpu_utilization() -> DiagnosticResult:
         status=CheckStatus.PASS,
         severity=Severity.INFO,
         data_source="Win32_Processor",
-        metadata={"cpu_percentage": cpu_load},
+        measured_value={"cpu_percentage": cpu_load},
     )
 
 
@@ -80,9 +80,9 @@ def check_memory_pressure() -> DiagnosticResult:
             observation=f"Severe memory exhaustion: {used_pct}% RAM used (only {free_gb} GB free of {total_gb} GB).",
             status=CheckStatus.WARNING,
             severity=Severity.HIGH,
-            kind=ResultKind.OBSERVATION,
+            result_kind=ResultKind.OBSERVATION,
             data_source="Win32_OperatingSystem",
-            metadata={"used_percent": used_pct, "free_gb": free_gb, "total_gb": total_gb},
+            measured_value={"used_percent": used_pct, "free_gb": free_gb, "total_gb": total_gb},
         )
 
     return DiagnosticResult(
@@ -92,7 +92,7 @@ def check_memory_pressure() -> DiagnosticResult:
         status=CheckStatus.PASS,
         severity=Severity.INFO,
         data_source="Win32_OperatingSystem",
-        metadata={"used_percent": used_pct, "free_gb": free_gb, "total_gb": total_gb},
+        measured_value={"used_percent": used_pct, "free_gb": free_gb, "total_gb": total_gb},
     )
 
 
@@ -127,9 +127,9 @@ def check_disk_space() -> DiagnosticResult:
             observation=f"Low disk space on system drive C:: {free_gb} GB free ({free_pct}% remaining of {total_gb} GB).",
             status=CheckStatus.WARNING,
             severity=Severity.HIGH,
-            kind=ResultKind.OBSERVATION,
+            result_kind=ResultKind.OBSERVATION,
             data_source="Get-Volume C:",
-            metadata={"free_gb": free_gb, "free_percent": free_pct, "total_gb": total_gb},
+            measured_value={"free_gb": free_gb, "free_percent": free_pct, "total_gb": total_gb},
         )
 
     return DiagnosticResult(
@@ -139,7 +139,7 @@ def check_disk_space() -> DiagnosticResult:
         status=CheckStatus.PASS,
         severity=Severity.INFO,
         data_source="Get-Volume C:",
-        metadata={"free_gb": free_gb, "free_percent": free_pct, "total_gb": total_gb},
+        measured_value={"free_gb": free_gb, "free_percent": free_pct, "total_gb": total_gb},
     )
 
 
@@ -172,9 +172,9 @@ def check_system_uptime() -> DiagnosticResult:
             observation=f"Extended system uptime: {days} days without a reboot. A restart is recommended to clear accumulated kernel and driver leaks.",
             status=CheckStatus.WARNING,
             severity=Severity.MEDIUM,
-            kind=ResultKind.OBSERVATION,
+            result_kind=ResultKind.OBSERVATION,
             data_source="Win32_OperatingSystem",
-            metadata={"uptime_days": days, "uptime_hours": hours},
+            measured_value={"uptime_days": days, "uptime_hours": hours},
         )
 
     return DiagnosticResult(
@@ -184,8 +184,12 @@ def check_system_uptime() -> DiagnosticResult:
         status=CheckStatus.PASS,
         severity=Severity.INFO,
         data_source="Win32_OperatingSystem",
-        metadata={"uptime_days": days, "uptime_hours": hours},
+        measured_value={"uptime_days": days, "uptime_hours": hours},
     )
+
+
+# Alias used by repair registry
+check_uptime = check_system_uptime
 
 
 def run_all_performance_checks() -> List[DiagnosticResult]:

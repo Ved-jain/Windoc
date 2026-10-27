@@ -51,4 +51,4 @@ class DiagnosticResult(BaseModel):
     admin_available: bool = Field(default=False, description="Whether administrator privileges were active during the check")
     execution_error: Optional[str] = Field(default=None, description="Subprocess or unexpected runtime error message if status == ERROR")
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")

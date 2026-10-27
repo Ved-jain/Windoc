@@ -169,11 +169,10 @@ def render_diagnosis_report(report) -> None:
         from windoc.repairs import registry
         matching_repairs = registry.find_for_cause(primary.cause_id)
         if matching_repairs:
-            rep_list = "\n".join(
-                f" - [bold cyan]windoc repair {r.repair_id}[/bold cyan] ({r.name}, Risk: {r.risk_level.value})"
-                for r in matching_repairs
+            content += (
+                f"\n\n[bold green]Ready to Fix:[/bold green] Simply run [bold cyan]windoc fix[/bold cyan] to automatically apply and verify this fix.\n"
+                f"[dim](Manual direct command: windoc repair {matching_repairs[0].repair_id})[/dim]"
             )
-            content += f"\n\n[bold green]Available Controlled Repairs:[/bold green]\n{rep_list}"
 
         console.print(
             Panel(
@@ -259,18 +258,39 @@ def scan(
     perf_report = evaluate_performance_hypotheses(perf_results)
     render_diagnosis_report(perf_report)
 
+    all_reports = [
+        (net_report, "Network"),
+        (bth_report, "Bluetooth"),
+        (drv_report, "Drivers"),
+        (upd_report, "Windows Update"),
+        (sys_report, "System"),
+        (perf_report, "Performance"),
+    ]
+
+    has_issues = any(
+        r.primary_finding and not r.primary_finding.cause_id.endswith("_ALL_HEALTHY")
+        for r, _ in all_reports
+    )
+
     if fix:
-        _run_auto_fixes(
-            [
-                (net_report, "Network"),
-                (bth_report, "Bluetooth"),
-                (drv_report, "Drivers"),
-                (upd_report, "Windows Update"),
-                (sys_report, "System"),
-                (perf_report, "Performance"),
-            ],
-            auto_approve=yes,
-        )
+        _run_auto_fixes(all_reports, auto_approve=yes)
+    elif has_issues:
+        is_tty = False
+        try:
+            is_tty = sys.stdin.isatty()
+        except Exception:
+            pass
+        if is_tty:
+            apply_now = typer.confirm(
+                "\nWinDoc detected issue(s). Would you like to automatically apply verified fixes now?",
+                default=True,
+            )
+            if apply_now:
+                _run_auto_fixes(all_reports, auto_approve=True)
+            else:
+                console.print("\n[bold cyan]Tip:[/bold cyan] Run [bold green]windoc fix[/bold green] anytime to automatically apply and verify fixes.\n")
+        else:
+            console.print("\n[bold cyan]Tip:[/bold cyan] Run [bold green]windoc fix[/bold green] to automatically apply and verify fixes.\n")
 
 
 def _run_auto_fixes(reports, auto_approve: bool = False) -> None:
